@@ -3,5 +3,5 @@
   "ignoreCommand": "if [ \"$VERCEL_GIT_COMMIT_REF\" = \"main\" ]; then exit 1; else exit 0; fi",
   "outputDirectory": ".output/public",
   "installCommand": "npm install",
-  "framework": "nuxtjs"
+  "framework": "nuxt"
 }
