@@ -144,8 +144,8 @@ function onListenPress() {
   voice.listen()
 }
 
-watch(voice.isFinal, (final) => {
-  if (!final) return
+watch(voice.resultCount, (n) => {
+  if (n === 0) return
   const result = voice.evaluate(dirPhrases)
   if (!result.matched) return
   if (result.matched === 'run') runPlan()

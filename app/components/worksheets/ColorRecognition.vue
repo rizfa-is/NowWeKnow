@@ -97,8 +97,8 @@ function onTouchAnswer(color: string) {
 }
 
 // Watch for voice answers
-watch(voice.isFinal, (final) => {
-  if (!final) return
+watch(voice.resultCount, (n) => {
+  if (n === 0) return
   const result = voice.evaluate(colorPhrases)
   if (!result.matched) {
     nextStep('wrong')

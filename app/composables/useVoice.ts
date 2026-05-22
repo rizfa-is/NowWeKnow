@@ -5,8 +5,6 @@ import { speechLocaleFor } from './useLocale'
 interface UseVoiceOptions {
   /** Continuous listening keeps the mic on after a result. */
   continuous?: boolean
-  /** Confidence threshold below which a result is treated as unclear. */
-  minConfidence?: number
   /** Misrecognitions tolerated before signaling fall-back to touch. */
   maxAttempts?: number
 }
@@ -28,6 +26,10 @@ export function normalize(input: string): string {
 /**
  * Match a transcript against a phrase dictionary.
  * Returns the matching key, or null when nothing matched.
+ *
+ * Each transcript word is compared against every phrase in the dictionary.
+ * A match wins on exact normalized equality OR substring containment in
+ * either direction (so "i think it's red" still matches "red").
  */
 export function matchPhrase(
   transcript: string,
@@ -37,6 +39,7 @@ export function matchPhrase(
   if (!transcript) return null
   const heard = normalize(transcript)
   if (!heard) return null
+  const heardWords = heard.split(' ')
 
   const tryLocale = (loc: Locale): string | null => {
     for (const [key, byLocale] of Object.entries(dict)) {
@@ -44,31 +47,33 @@ export function matchPhrase(
       for (const phrase of phrases) {
         const norm = normalize(phrase)
         if (!norm) continue
-        if (heard === norm || heard.includes(norm) || norm.includes(heard)) {
-          return key
-        }
+        if (heard === norm) return key
+        if (heard.includes(norm) || norm.includes(heard)) return key
+        // Word-level match (handles "merah." or "the merah" cases)
+        if (heardWords.includes(norm)) return key
       }
     }
     return null
   }
 
+  // Try the active locale first, then fall back to the other locale so
+  // a kid speaking the wrong language still gets credit.
   return tryLocale(locale) ?? tryLocale(locale === 'en' ? 'id' : 'en')
 }
 
 /**
  * Voice input wrapper around VueUse's `useSpeechRecognition`.
  *
- * Provides:
- *  - locale-aware language tag (id-ID / en-US)
- *  - per-prompt listen/stop with attempt counting
- *  - confidence reading from the underlying SpeechRecognition events
- *  - normalized matching against a phrase dictionary
- *  - graceful fallback signal when the API is unsupported or denied
+ * - locale-aware language tag (id-ID / en-US) that follows useLocale()
+ * - per-prompt listen/stop with attempt counting
+ * - normalized matching against a phrase dictionary (case + diacritic insensitive)
+ * - `resultCount` ref that worksheets watch to react to any new transcript,
+ *   sidestepping browser-specific quirks with the `isFinal` flag
+ * - graceful fallback signal when the API is unsupported or denied
  */
 export function useVoice(options: UseVoiceOptions = {}) {
   const {
     continuous = false,
-    minConfidence = 0.6,
     maxAttempts = 2,
   } = options
 
@@ -83,32 +88,23 @@ export function useVoice(options: UseVoiceOptions = {}) {
   })
 
   const attempts = ref(0)
-  const lastTranscript = ref('')
-  const lastConfidence = ref(0)
   const fallbackToTouch = ref(false)
+  /**
+   * Bumps every time a final transcript is received.
+   * Worksheets watch this to evaluate, regardless of how a particular
+   * browser flips `isFinal` between interim and final events.
+   */
+  const resultCount = ref(0)
 
-  // Capture confidence directly from the SpeechRecognition `result` event,
-  // since VueUse only exposes the transcript string. The DOM SpeechRecognition
-  // types are still vendor-specific in some browsers, so we cast through any.
+  // VueUse's `result` ref holds the latest transcript. With interimResults
+  // off, every emission is final — so any change to the ref means a new
+  // utterance has been recognized.
   if (import.meta.client) {
-    const attachListener = () => {
-      const rec = speech.recognition as unknown as EventTarget | undefined
-      if (!rec) return
-      rec.addEventListener('result', (event: Event) => {
-        const e = event as Event & {
-          results: ArrayLike<ArrayLike<{ transcript: string, confidence: number }>>
-        }
-        const last = e.results[e.results.length - 1]
-        if (!last) return
-        const alt = last[0]
-        if (!alt) return
-        lastTranscript.value = alt.transcript
-        lastConfidence.value = alt.confidence ?? 0
-      })
-    }
-    onMounted(attachListener)
-    // VueUse re-creates `recognition` when `lang` changes (via watch).
-    watch(lang, () => nextTick(attachListener))
+    watch(speech.result, (transcript) => {
+      if (typeof transcript === 'string' && transcript.length > 0) {
+        resultCount.value += 1
+      }
+    })
   }
 
   function listen() {
@@ -116,29 +112,25 @@ export function useVoice(options: UseVoiceOptions = {}) {
       fallbackToTouch.value = true
       return
     }
-    lastTranscript.value = ''
-    lastConfidence.value = 0
     speech.start()
   }
 
   function reset() {
     attempts.value = 0
     fallbackToTouch.value = false
-    lastTranscript.value = ''
-    lastConfidence.value = 0
   }
 
   /**
    * Evaluate the latest transcript against a phrase dictionary.
    * Increments attempts and trips the touch fallback flag on failure.
+   *
+   * The dictionary itself is the whitelist: only known answer words
+   * resolve to a match, so we don't need a separate confidence gate.
    */
   function evaluate(dict: PhraseDictionary) {
-    const matched = matchPhrase(lastTranscript.value, dict, locale.value)
-    // When the browser doesn't report confidence, trust a phrase hit.
-    const confident = lastConfidence.value === 0
-      ? Boolean(matched)
-      : lastConfidence.value >= minConfidence
-    const success = Boolean(matched) && confident
+    const transcript = speech.result.value || ''
+    const matched = matchPhrase(transcript, dict, locale.value)
+    const success = Boolean(matched)
 
     if (!success) {
       attempts.value += 1
@@ -146,8 +138,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
     }
 
     return {
-      transcript: lastTranscript.value,
-      confidence: lastConfidence.value,
+      transcript,
       matched: success ? matched : null,
       attempts: attempts.value,
     }
@@ -158,8 +149,8 @@ export function useVoice(options: UseVoiceOptions = {}) {
     isSupported: speech.isSupported,
     isListening: speech.isListening,
     isFinal: speech.isFinal,
-    transcript: lastTranscript,
-    confidence: lastConfidence,
+    transcript: speech.result,
+    resultCount,
     attempts,
     fallbackToTouch,
     error: speech.error,
