@@ -100,6 +100,7 @@ watch(voice.resultCount, (n) => {
 <template>
   <WorksheetShell
     :title="worksheet.title"
+    :type="worksheet.type"
     :steps="prompts.length"
     :current="stepIndex"
     :feedback="feedback"

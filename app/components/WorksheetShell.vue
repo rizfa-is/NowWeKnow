@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { motion, AnimatePresence } from 'motion-v'
-import type { LocalizedString } from '~/types/worksheet'
+import type { LocalizedString, WorksheetType } from '~/types/worksheet'
 
 const props = defineProps<{
   title: LocalizedString
   steps: number
   current: number
+  /** Worksheet type — drives the per-type instructions overlay. */
+  type: WorksheetType
   feedback?: 'correct' | 'wrong' | 'idle'
   hint?: LocalizedString | null
 }>()
@@ -23,6 +25,10 @@ const hintText = computed(() => (props.hint ? props.hint[locale.value] : ''))
 
 const exitLabel = computed(() => (locale.value === 'id' ? 'Keluar' : 'Exit'))
 const hintLabel = computed(() => (locale.value === 'id' ? 'Petunjuk' : 'Hint'))
+const helpLabel = computed(() => (locale.value === 'id' ? 'Cara main' : 'How to play'))
+
+// Auto-show the intro overlay on first mount of each worksheet.
+const introOpen = ref(true)
 
 function onExit() {
   router.push('/')
@@ -42,7 +48,18 @@ function onExit() {
         <ProgressDots :steps="steps" :current="current" />
       </div>
 
-      <LocaleToggle />
+      <div class="shell__top-actions">
+        <button
+          type="button"
+          class="shell__help"
+          :aria-label="helpLabel"
+          :title="helpLabel"
+          @click="introOpen = true"
+        >
+          ?
+        </button>
+        <LocaleToggle />
+      </div>
     </header>
 
     <div class="shell__stage">
@@ -72,6 +89,13 @@ function onExit() {
       </button>
       <p v-if="hintText" class="shell__hint-text">{{ hintText }}</p>
     </footer>
+
+    <WorksheetIntro
+      :open="introOpen"
+      :type="type"
+      :title="title"
+      @close="introOpen = false"
+    />
   </section>
 </template>
 
@@ -119,6 +143,30 @@ function onExit() {
 .shell__title {
   font-size: clamp(1.25rem, 2.4vw, 1.75rem);
   margin: 0;
+}
+.shell__top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.shell__help {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-fg);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+  display: grid;
+  place-items: center;
+}
+.shell__help:hover {
+  background: var(--color-accent);
+  color: var(--color-white);
 }
 .shell__stage {
   position: relative;

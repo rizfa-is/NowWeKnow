@@ -174,6 +174,7 @@ function isWall(x: number, y: number): boolean {
 <template>
   <WorksheetShell
     :title="worksheet.title"
+    :type="worksheet.type"
     :steps="levels.length"
     :current="stepIndex"
     :feedback="feedback"
