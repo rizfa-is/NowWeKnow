@@ -473,6 +473,7 @@ function isWall(x: number, y: number): boolean {
   color: var(--color-fg-muted);
   font-style: italic;
   font-size: 0.85rem;
+  text-transform: capitalize;
 }
 
 .mz__done {

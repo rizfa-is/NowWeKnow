@@ -521,6 +521,7 @@ const expanded = computed<string[]>(() => {
   text-align: center;
   color: var(--color-fg-muted);
   font-style: italic;
+  text-transform: capitalize;
 }
 
 .lp__done {

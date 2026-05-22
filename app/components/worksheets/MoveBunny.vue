@@ -227,6 +227,7 @@ watch(voice.isFinal, (final) => {
   margin: 0;
   color: var(--color-fg-muted);
   font-style: italic;
+  text-transform: capitalize;
 }
 
 .mv__pad {

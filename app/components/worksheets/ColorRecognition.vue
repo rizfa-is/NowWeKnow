@@ -251,6 +251,7 @@ function shapeFill(color: string): string {
   margin: 0;
   color: var(--color-fg-muted);
   font-style: italic;
+  text-transform: capitalize;
 }
 .cw__sep {
   color: var(--color-fg-muted);

@@ -277,6 +277,7 @@ const completeMsg = computed(() => (locale.value === 'id'
   margin: 0;
   color: var(--color-fg-muted);
   font-style: italic;
+  text-transform: capitalize;
 }
 
 .seq__tray {
