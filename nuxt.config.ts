@@ -30,6 +30,17 @@ export default defineNuxtConfig({
       },
     },
   },
+  // Full static site generation. Vercel deploys .output/public as a
+  // static site (see vercel.json), so every page must be prerendered.
+  // crawlLinks follows internal NuxtLinks from the seed routes to find
+  // all worksheet pages without listing them by hand.
+  nitro: {
+    prerender: {
+      crawlLinks: true,
+      routes: ['/'],
+      failOnError: false,
+    },
+  },
   features: {
     inlineStyles: false,
   },
