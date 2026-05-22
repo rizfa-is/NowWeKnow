@@ -88,13 +88,17 @@ export function useVoice(options: UseVoiceOptions = {}) {
   const fallbackToTouch = ref(false)
 
   // Capture confidence directly from the SpeechRecognition `result` event,
-  // since VueUse only exposes the transcript string.
+  // since VueUse only exposes the transcript string. The DOM SpeechRecognition
+  // types are still vendor-specific in some browsers, so we cast through any.
   if (import.meta.client) {
     const attachListener = () => {
-      const rec = speech.recognition
+      const rec = speech.recognition as unknown as EventTarget | undefined
       if (!rec) return
-      rec.addEventListener('result', (event: SpeechRecognitionEvent) => {
-        const last = event.results[event.results.length - 1]
+      rec.addEventListener('result', (event: Event) => {
+        const e = event as Event & {
+          results: ArrayLike<ArrayLike<{ transcript: string, confidence: number }>>
+        }
+        const last = e.results[e.results.length - 1]
         if (!last) return
         const alt = last[0]
         if (!alt) return
