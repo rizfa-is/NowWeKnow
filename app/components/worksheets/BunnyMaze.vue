@@ -29,13 +29,11 @@ const voice = useVoice()
 const stepIndex = ref(0)
 const feedback = ref<'idle' | 'correct' | 'wrong'>('idle')
 const showHint = ref(false)
-const runStatus = ref<'idle' | 'running' | 'won' | 'crashed' | 'shortfall'>('idle')
+const moveCount = ref(0)
 
 const current = computed(() => levels.value[stepIndex.value])
 const done = computed(() => stepIndex.value >= levels.value.length)
 
-const plan = ref<Dir[]>([])
-const isRunning = ref(false)
 const bunny = ref<[number, number]>([0, 0])
 
 const dirPhrases: PhraseDictionary = {
@@ -43,40 +41,36 @@ const dirPhrases: PhraseDictionary = {
   down: { en: ['down', 'south'], id: ['bawah', 'turun', 'selatan'] },
   left: { en: ['left', 'west'], id: ['kiri', 'barat'] },
   right: { en: ['right', 'east', 'forward'], id: ['kanan', 'maju', 'timur'] },
-  run: { en: ['go', 'run', 'start', 'play'], id: ['jalan', 'mulai', 'main'] },
-  reset: { en: ['reset', 'clear', 'undo'], id: ['ulang', 'hapus', 'reset'] },
-}
-
-const dirEmoji: Record<Dir, string> = {
-  up: '↑', down: '↓', left: '←', right: '→',
+  reset: { en: ['reset', 'restart', 'back'], id: ['ulang', 'mulai', 'kembali'] },
 }
 
 const promptCopy = computed<LocalizedString>(() => ({
-  en: 'Plan a path so the bunny touches the carrot. Then say "go".',
-  id: 'Susun jalur agar kelinci menyentuh wortel. Lalu sebutkan "jalan".',
+  en: 'Step the bunny to the carrot. Say "up", "down", "left", or "right".',
+  id: 'Pindahkan kelinci ke wortel. Sebut "atas", "bawah", "kiri", atau "kanan".',
 }))
 
 const hint = computed<LocalizedString>(() => {
-  if (runStatus.value === 'crashed') {
-    return {
-      en: 'The bunny hit a wall or went out of the grid. Tap reset and try again.',
-      id: 'Kelinci kena dinding atau keluar dari kotak. Tekan ulang dan coba lagi.',
-    }
-  }
-  if (runStatus.value === 'shortfall') {
-    return {
-      en: 'The plan finished but the bunny missed the carrot. Add more steps.',
-      id: 'Rencana selesai tapi belum sampai wortel. Tambah langkah.',
-    }
+  if (!current.value) return { en: '', id: '' }
+  const [bx, by] = bunny.value
+  const [gx, gy] = current.value.goal
+  const dx = gx - bx
+  const dy = gy - by
+  const parts: string[] = []
+  const partsId: string[] = []
+  if (dx > 0) { parts.push(`${dx} right`); partsId.push(`${dx} kanan`) }
+  if (dx < 0) { parts.push(`${-dx} left`); partsId.push(`${-dx} kiri`) }
+  if (dy > 0) { parts.push(`${dy} down`); partsId.push(`${dy} bawah`) }
+  if (dy < 0) { parts.push(`${-dy} up`); partsId.push(`${-dy} atas`) }
+  if (parts.length === 0) {
+    return { en: 'Already there!', id: 'Sudah sampai!' }
   }
   return {
-    en: 'Add steps with voice ("up", "right") or arrows. Say "go" to run.',
-    id: 'Tambah langkah pakai suara ("atas", "kanan") atau panah. Sebut "jalan" untuk menjalankan.',
+    en: `You need ${parts.join(' and ')}. Watch out for the dark walls.`,
+    id: `Butuh ${partsId.join(' dan ')}. Hati-hati dinding gelap.`,
   }
 })
 
 const tapToTalk = computed(() => (locale.value === 'id' ? 'Tekan dan bicara' : 'Tap to speak'))
-const goLabel = computed(() => (locale.value === 'id' ? 'Jalan' : 'Go'))
 const resetLabel = computed(() => (locale.value === 'id' ? 'Ulang' : 'Reset'))
 const completeMsg = computed(() => (locale.value === 'id'
   ? 'Semua labirin terpecahkan!'
@@ -91,76 +85,48 @@ const wallSet = computed(() => {
 watch(current, (lvl) => {
   if (!lvl) return
   bunny.value = [...lvl.start] as [number, number]
-  plan.value = []
-  isRunning.value = false
-  runStatus.value = 'idle'
+  moveCount.value = 0
   voice.reset()
   showHint.value = false
 }, { immediate: true })
 
-function addStep(d: Dir) {
-  if (isRunning.value) return
-  if (runStatus.value !== 'idle' && runStatus.value !== 'running') return
-  plan.value.push(d)
+function reset() {
+  if (!current.value) return
+  bunny.value = [...current.value.start] as [number, number]
+  moveCount.value = 0
 }
 
-function clearPlan() {
-  if (isRunning.value || !current.value) return
-  plan.value = []
-  bunny.value = [...current.value.start] as [number, number]
-  runStatus.value = 'idle'
-}
+function step(d: Dir) {
+  if (!current.value) return
+  if (feedback.value === 'correct') return
 
-async function runPlan() {
-  if (isRunning.value || !current.value) return
-  if (plan.value.length === 0) return
-  isRunning.value = true
-  runStatus.value = 'running'
-  bunny.value = [...current.value.start] as [number, number]
-  await new Promise(r => setTimeout(r, 250))
+  const [x, y] = bunny.value
+  let nx = x, ny = y
+  if (d === 'up') ny -= 1
+  else if (d === 'down') ny += 1
+  else if (d === 'left') nx -= 1
+  else if (d === 'right') nx += 1
 
-  const [gx, gy] = current.value.goal
-
-  for (const move of plan.value) {
-    const [x, y] = bunny.value
-    let nx = x, ny = y
-    if (move === 'up') ny -= 1
-    else if (move === 'down') ny += 1
-    else if (move === 'left') nx -= 1
-    else if (move === 'right') nx += 1
-
-    const inBounds = nx >= 0 && nx < current.value.cols && ny >= 0 && ny < current.value.rows
-    const isWall = wallSet.value.has(`${nx},${ny}`)
-    if (!inBounds || isWall) {
-      // Crash: stop here, reveal failure clearly.
-      runStatus.value = 'crashed'
-      feedback.value = 'wrong'
-      isRunning.value = false
-      setTimeout(() => { feedback.value = 'idle' }, 900)
-      return
-    }
-    bunny.value = [nx, ny]
-    await new Promise(r => setTimeout(r, 420))
-
-    // Win the moment the bunny touches the carrot. Kids find
-    // "land exactly on the last step" too punishing for SD-low.
-    if (nx === gx && ny === gy) {
-      runStatus.value = 'won'
-      feedback.value = 'correct'
-      setTimeout(() => {
-        feedback.value = 'idle'
-        stepIndex.value += 1
-      }, 1200)
-      isRunning.value = false
-      return
-    }
+  const inBounds = nx >= 0 && nx < current.value.cols && ny >= 0 && ny < current.value.rows
+  const isWall = wallSet.value.has(`${nx},${ny}`)
+  if (!inBounds || isWall) {
+    // Bonk: don't move, give a brief "wrong" tick.
+    feedback.value = 'wrong'
+    setTimeout(() => { feedback.value = 'idle' }, 350)
+    return
   }
 
-  // Plan ran out without reaching the goal.
-  runStatus.value = 'shortfall'
-  feedback.value = 'wrong'
-  setTimeout(() => { feedback.value = 'idle' }, 900)
-  isRunning.value = false
+  bunny.value = [nx, ny]
+  moveCount.value += 1
+
+  const [gx, gy] = current.value.goal
+  if (nx === gx && ny === gy) {
+    feedback.value = 'correct'
+    setTimeout(() => {
+      feedback.value = 'idle'
+      stepIndex.value += 1
+    }, 1100)
+  }
 }
 
 function onListenPress() {
@@ -175,9 +141,8 @@ watch(voice.resultCount, (n) => {
   if (n === 0) return
   const result = voice.evaluate(dirPhrases)
   if (!result.matched) return
-  if (result.matched === 'run') runPlan()
-  else if (result.matched === 'reset') clearPlan()
-  else addStep(result.matched as Dir)
+  if (result.matched === 'reset') reset()
+  else step(result.matched as Dir)
 })
 
 function isStart(x: number, y: number): boolean {
@@ -230,73 +195,32 @@ const boardStyle = computed(() => current.value
             >
               <span v-if="isGoal(x - 1, y - 1)" class="mz__goal">🥕</span>
               <span v-else-if="isStart(x - 1, y - 1)" class="mz__home">🏠</span>
-              <span v-else-if="isWall(x - 1, y - 1)" class="mz__wall" aria-hidden="true">▮</span>
             </div>
           </template>
           <span class="mz__bunny" aria-label="bunny">🐰</span>
         </div>
 
         <div class="mz__panel">
-          <div class="mz__plan-box" :aria-label="locale === 'id' ? 'Daftar langkah' : 'Plan'">
-            <p class="mz__plan-title">
-              {{ locale === 'id' ? 'Rencana' : 'Plan' }}
-              <span class="mz__plan-count">({{ plan.length }})</span>
-            </p>
-            <div class="mz__plan-list">
-              <span v-if="plan.length === 0" class="mz__plan-empty">
-                {{ locale === 'id' ? 'Belum ada langkah' : 'No steps yet' }}
-              </span>
-              <motion.span
-                v-for="(d, i) in plan"
-                :key="`p-${i}`"
-                class="mz__plan-step"
-                :initial="{ scale: 0.6, opacity: 0 }"
-                :animate="{ scale: 1, opacity: 1 }"
-                :transition="{ duration: 0.18 }"
-              >
-                {{ dirEmoji[d] }}
-              </motion.span>
-            </div>
-            <p
-              v-if="runStatus === 'crashed' || runStatus === 'shortfall'"
-              class="mz__status is-bad"
-            >
-              {{ runStatus === 'crashed'
-                ? (locale === 'id' ? 'Kena dinding!' : 'Hit a wall!')
-                : (locale === 'id' ? 'Belum sampai wortel' : 'Did not reach the carrot') }}
-            </p>
+          <div class="mz__counter" :aria-label="locale === 'id' ? 'Jumlah langkah' : 'Steps taken'">
+            <span class="mz__counter-label">{{ locale === 'id' ? 'Langkah' : 'Steps' }}</span>
+            <strong class="mz__counter-num">{{ moveCount }}</strong>
           </div>
 
           <div class="mz__pad" :aria-label="locale === 'id' ? 'Tombol arah' : 'Direction pad'">
             <span></span>
-            <button class="mz__arrow" :disabled="isRunning" @click="addStep('up')">↑</button>
+            <button class="mz__arrow" @click="step('up')">↑</button>
             <span></span>
-            <button class="mz__arrow" :disabled="isRunning" @click="addStep('left')">←</button>
-            <button class="mz__arrow is-secondary" :disabled="isRunning" @click="clearPlan">⟲</button>
-            <button class="mz__arrow" :disabled="isRunning" @click="addStep('right')">→</button>
+            <button class="mz__arrow" @click="step('left')">←</button>
+            <button class="mz__arrow is-secondary" :aria-label="resetLabel" @click="reset">⟲</button>
+            <button class="mz__arrow" @click="step('right')">→</button>
             <span></span>
-            <button class="mz__arrow" :disabled="isRunning" @click="addStep('down')">↓</button>
+            <button class="mz__arrow" @click="step('down')">↓</button>
             <span></span>
           </div>
 
-          <div class="mz__actions">
-            <button
-              type="button"
-              class="mz__go"
-              :disabled="isRunning || plan.length === 0"
-              @click="runPlan"
-            >
-              ▶ {{ goLabel }}
-            </button>
-            <button
-              type="button"
-              class="mz__clear"
-              :disabled="isRunning || plan.length === 0"
-              @click="clearPlan"
-            >
-              {{ resetLabel }}
-            </button>
-          </div>
+          <button type="button" class="mz__reset" @click="reset">
+            {{ resetLabel }}
+          </button>
 
           <div class="mz__voice">
             <MicButton
@@ -349,7 +273,7 @@ const boardStyle = computed(() => current.value
 
 .mz__layout {
   display: grid;
-  grid-template-columns: minmax(280px, 1.5fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(280px, 1.5fr) minmax(220px, 1fr);
   gap: 1.5rem;
   align-items: start;
 }
@@ -360,8 +284,6 @@ const boardStyle = computed(() => current.value
 }
 
 .mz__board {
-  /* CSS variables drive cell-perfect bunny positioning regardless of
-     how many cols/rows a level has. */
   --pad: clamp(0.5rem, 1.5vw, 0.75rem);
   --gap: clamp(3px, 0.6vw, 5px);
   --cell-w: calc((100% - var(--pad) * 2 - var(--gap) * (var(--cols) - 1)) / var(--cols));
@@ -385,7 +307,6 @@ const boardStyle = computed(() => current.value
 }
 .mz__tile.is-wall {
   background: #2a2f4a;
-  color: rgba(255, 255, 255, 0.15);
 }
 .mz__tile.is-start {
   background: var(--color-accent-soft);
@@ -397,9 +318,6 @@ const boardStyle = computed(() => current.value
 .mz__goal,
 .mz__home {
   font-size: 1.25em;
-}
-.mz__wall {
-  font-size: 0.7em;
 }
 
 .mz__bunny {
@@ -414,61 +332,37 @@ const boardStyle = computed(() => current.value
   pointer-events: none;
   z-index: 2;
   transition:
-    left 0.36s cubic-bezier(0.4, 0, 0.2, 1),
-    top 0.36s cubic-bezier(0.4, 0, 0.2, 1);
+    left 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    top 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .mz__panel {
   display: grid;
   gap: 1rem;
+  justify-items: center;
 }
-.mz__plan-box {
+.mz__counter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6rem;
   background: var(--color-surface);
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-md);
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
   box-shadow: var(--shadow-card);
 }
-.mz__plan-title {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+.mz__counter-label {
   font-family: var(--font-display);
   font-weight: 600;
-  margin: 0 0 0.5rem;
-}
-.mz__plan-count {
-  color: var(--color-fg-muted);
   font-size: 0.85rem;
-  font-weight: 500;
-}
-.mz__plan-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  min-height: 2.25rem;
-}
-.mz__plan-step {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--color-accent-soft);
-  font-weight: 700;
-}
-.mz__plan-empty {
   color: var(--color-fg-muted);
-  font-style: italic;
-  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.mz__status {
-  margin: 0.5rem 0 0;
+.mz__counter-num {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-.mz__status.is-bad {
-  color: var(--color-error);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--color-fg);
 }
 
 .mz__pad {
@@ -477,14 +371,13 @@ const boardStyle = computed(() => current.value
   gap: 6px;
   width: 100%;
   max-width: 240px;
-  justify-self: center;
 }
 .mz__arrow {
-  height: clamp(48px, 12vw, 56px);
+  height: clamp(56px, 14vw, 64px);
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: 700;
   box-shadow: var(--shadow-card);
 }
@@ -492,35 +385,20 @@ const boardStyle = computed(() => current.value
   background: var(--color-bg-deep);
   font-size: 1.25rem;
 }
-.mz__arrow:disabled {
-  opacity: 0.4;
+.mz__arrow:active {
+  transform: scale(0.95);
 }
 
-.mz__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-.mz__go,
-.mz__clear {
-  flex: 1;
-  height: clamp(48px, 12vw, 56px);
+.mz__reset {
+  height: 48px;
+  padding: 0 1.5rem;
   border: 0;
-  border-radius: var(--radius-md);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1rem;
-}
-.mz__go {
-  background: var(--color-success);
-  color: var(--color-white);
-}
-.mz__clear {
+  border-radius: 999px;
   background: var(--color-bg-deep);
   color: var(--color-fg);
-}
-.mz__go:disabled,
-.mz__clear:disabled {
-  opacity: 0.4;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
 }
 
 .mz__voice {
@@ -529,6 +407,7 @@ const boardStyle = computed(() => current.value
   gap: 0.4rem;
   padding-top: 0.5rem;
   border-top: 1px dashed rgba(31, 37, 64, 0.1);
+  width: 100%;
 }
 .mz__voice-label {
   font-family: var(--font-display);

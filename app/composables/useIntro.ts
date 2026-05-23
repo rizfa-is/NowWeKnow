@@ -146,12 +146,12 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
   },
   maze: {
     goal: {
-      en: 'Plan a path so the bunny touches the carrot.',
-      id: 'Susun jalur agar kelinci menyentuh wortel.',
+      en: 'Step the bunny through the maze to the carrot.',
+      id: 'Pindahkan kelinci melewati labirin sampai ke wortel.',
     },
     win: {
-      en: 'You win the moment the bunny lands on the carrot tile during the run, even if you have extra steps after.',
-      id: 'Kamu menang saat kelinci sampai di wortel waktu jalan, meski masih ada langkah sisa.',
+      en: 'Land on the carrot tile. Each command moves the bunny one cell.',
+      id: 'Sampai di kotak wortel. Setiap perintah menggerakkan kelinci satu kotak.',
     },
     steps: [
       {
@@ -164,35 +164,35 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
       {
         icon: '🎤',
         text: {
-          en: 'Add steps by saying "up", "right", "down", or "left".',
-          id: 'Tambah langkah dengan suara "atas", "kanan", "bawah", atau "kiri".',
+          en: 'Say "up", "right", "down", or "left" — bunny moves one tile.',
+          id: 'Sebut "atas", "kanan", "bawah", atau "kiri" — kelinci bergerak satu kotak.',
+        },
+      },
+      {
+        icon: '👆',
+        text: {
+          en: 'Or tap the arrow pad. Same effect.',
+          id: 'Atau tekan tombol panah. Efeknya sama.',
         },
       },
       {
         icon: '🚧',
         text: {
-          en: 'Avoid the dark wall tiles — hitting one ends the run.',
-          id: 'Hindari kotak hitam — kena dinding berarti gagal.',
-        },
-      },
-      {
-        icon: '▶️',
-        text: {
-          en: 'Say "go" or tap Go to run your plan.',
-          id: 'Sebut "jalan" atau tekan Jalan untuk menjalankan rencana.',
+          en: 'Dark tiles are walls. The bunny stops when it bumps into one.',
+          id: 'Kotak hitam adalah dinding. Kelinci berhenti jika tertabrak.',
         },
       },
       {
         icon: '🔄',
         text: {
-          en: 'Hit a wall or come up short? Say "reset" and try again.',
-          id: 'Kena dinding atau belum sampai? Sebut "ulang" lalu coba lagi.',
+          en: 'Stuck? Say "reset" to teleport the bunny back home.',
+          id: 'Buntu? Sebut "ulang" untuk kembali ke awal.',
         },
       },
     ],
     voiceTips: {
-      en: ['"up"', '"right"', '"go"', '"reset"'],
-      id: ['"atas"', '"kanan"', '"jalan"', '"ulang"'],
+      en: ['"up"', '"right"', '"down"', '"left"', '"reset"'],
+      id: ['"atas"', '"kanan"', '"bawah"', '"kiri"', '"ulang"'],
     },
   },
   loop: {
