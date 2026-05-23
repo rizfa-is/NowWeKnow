@@ -1,4 +1,4 @@
-import type { Locale, WorksheetType } from '~/types/worksheet'
+import type { WorksheetType } from '~/types/worksheet'
 
 interface IntroStep {
   icon: string
@@ -7,19 +7,26 @@ interface IntroStep {
 
 interface IntroDefinition {
   goal: { en: string, id: string }
+  /** Concrete winning condition. Shown as a green "How to win" panel. */
+  win: { en: string, id: string }
   steps: IntroStep[]
   voiceTips: { en: string[], id: string[] }
 }
 
 /**
  * Per-type instructions shown to teachers + kids before they start.
- * Kept short, action-first, with example voice phrases.
+ * Each entry has a Goal, a How-to-win line, numbered steps, and example
+ * voice phrases. Kept short and action-first.
  */
 const INTROS: Record<WorksheetType, IntroDefinition> = {
   color: {
     goal: {
       en: 'Name the color you see.',
       id: 'Sebutkan warna yang kamu lihat.',
+    },
+    win: {
+      en: 'Say or tap the correct color for every shape to finish the round.',
+      id: 'Sebutkan atau sentuh warna yang benar untuk semua bentuk supaya menang.',
     },
     steps: [
       {
@@ -51,10 +58,21 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
   },
   sequence: {
     goal: {
-      en: 'Put the items in the right order.',
-      id: 'Susun benda sesuai urutan yang benar.',
+      en: 'Sort the items by the rule shown above the slots.',
+      id: 'Urutkan benda sesuai aturan yang tertulis di atas kotak.',
+    },
+    win: {
+      en: 'Fill every slot in the order the rule asks for. The slots turn green when correct.',
+      id: 'Isi semua kotak sesuai aturan. Kotak akan hijau kalau benar.',
     },
     steps: [
+      {
+        icon: '📜',
+        text: {
+          en: 'Read the rule (e.g. "smallest to largest").',
+          id: 'Baca aturannya (misal "dari yang terkecil ke yang terbesar").',
+        },
+      },
       {
         icon: '🔢',
         text: {
@@ -65,27 +83,31 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
       {
         icon: '🎤',
         text: {
-          en: 'Say or tap each item, starting with "first".',
-          id: 'Ucapkan atau sentuh tiap benda, mulai dari yang pertama.',
+          en: 'Say or tap the FIRST item, then the next, then the next.',
+          id: 'Ucapkan atau sentuh benda PERTAMA, lalu berikutnya, lalu berikutnya.',
         },
       },
       {
         icon: '✅',
         text: {
-          en: 'Fill every slot to finish the round.',
-          id: 'Isi semua kotak untuk menyelesaikan ronde.',
+          en: 'Wrong items shake red. Just try the correct one.',
+          id: 'Salah pilih akan bergetar merah. Coba lagi yang benar.',
         },
       },
     ],
     voiceTips: {
-      en: ['"apple"', '"banana"', '"grapes"'],
-      id: ['"apel"', '"pisang"', '"anggur"'],
+      en: ['"ant"', '"elephant"', '"sunrise"'],
+      id: ['"semut"', '"gajah"', '"matahari terbit"'],
     },
   },
   move: {
     goal: {
-      en: 'Move the bunny to the carrot.',
-      id: 'Pindahkan kelinci sampai ke wortel.',
+      en: 'Land the bunny exactly on the carrot tile.',
+      id: 'Berhentikan kelinci tepat di kotak wortel.',
+    },
+    win: {
+      en: 'Step right the right number of times. Going past the carrot is a miss — say "left" to step back.',
+      id: 'Sebut "kanan" sejumlah kotak yang dibutuhkan. Kelebihan = belum menang. Sebut "kiri" untuk mundur.',
     },
     steps: [
       {
@@ -98,15 +120,22 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
       {
         icon: '🎤',
         text: {
-          en: 'Say "right" to step forward, or tap the → button.',
-          id: 'Ucapkan "kanan" untuk maju, atau sentuh tombol →.',
+          en: 'Say "right" or tap → to step forward.',
+          id: 'Sebut "kanan" atau tekan → untuk maju satu kotak.',
         },
       },
       {
         icon: '🐰',
         text: {
-          en: 'Land exactly on the carrot to win.',
-          id: 'Berhenti tepat di wortel untuk menang.',
+          en: 'Bunny lands on carrot? You win this round.',
+          id: 'Kelinci di wortel? Ronde ini menang.',
+        },
+      },
+      {
+        icon: '↩️',
+        text: {
+          en: 'Went too far? Say "left" or tap ← to step back.',
+          id: 'Kelebihan? Sebut "kiri" atau tekan ← untuk mundur.',
         },
       },
     ],
@@ -117,15 +146,19 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
   },
   maze: {
     goal: {
-      en: 'Plan a path. Then run it.',
-      id: 'Susun rencana jalan. Lalu jalankan.',
+      en: 'Plan a path so the bunny touches the carrot.',
+      id: 'Susun jalur agar kelinci menyentuh wortel.',
+    },
+    win: {
+      en: 'You win the moment the bunny lands on the carrot tile during the run, even if you have extra steps after.',
+      id: 'Kamu menang saat kelinci sampai di wortel waktu jalan, meski masih ada langkah sisa.',
     },
     steps: [
       {
         icon: '🗺️',
         text: {
-          en: 'Look at where the bunny starts and where the carrot is.',
-          id: 'Lihat dari mana kelinci mulai dan di mana wortelnya.',
+          en: 'Look at where the bunny starts (🏠) and where the carrot is (🥕).',
+          id: 'Lihat tempat awal kelinci (🏠) dan letak wortel (🥕).',
         },
       },
       {
@@ -136,17 +169,24 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
         },
       },
       {
+        icon: '🚧',
+        text: {
+          en: 'Avoid the dark wall tiles — hitting one ends the run.',
+          id: 'Hindari kotak hitam — kena dinding berarti gagal.',
+        },
+      },
+      {
         icon: '▶️',
         text: {
           en: 'Say "go" or tap Go to run your plan.',
-          id: 'Ucapkan "jalan" atau tekan Jalan untuk menjalankan rencana.',
+          id: 'Sebut "jalan" atau tekan Jalan untuk menjalankan rencana.',
         },
       },
       {
         icon: '🔄',
         text: {
-          en: 'Hit a wall? Say "reset" and try again.',
-          id: 'Kena dinding? Ucapkan "ulang" dan coba lagi.',
+          en: 'Hit a wall or come up short? Say "reset" and try again.',
+          id: 'Kena dinding atau belum sampai? Sebut "ulang" lalu coba lagi.',
         },
       },
     ],
@@ -157,42 +197,53 @@ const INTROS: Record<WorksheetType, IntroDefinition> = {
   },
   loop: {
     goal: {
-      en: 'Build a loop that matches the dance.',
-      id: 'Bangun loop yang sesuai dengan tarian.',
+      en: 'Build a loop that makes the same dance as the target.',
+      id: 'Bangun loop yang menghasilkan tarian yang sama dengan target.',
+    },
+    win: {
+      en: 'Your expanded moves must match the target exactly — same moves, same order, same total length.',
+      id: 'Hasil loop kamu harus persis sama dengan target — gerakan, urutan, dan jumlah harus sama.',
     },
     steps: [
       {
-        icon: '💃',
+        icon: '🎯',
         text: {
-          en: 'Read the goal: which moves repeat how many times?',
-          id: 'Pahami target: gerakan apa, diulang berapa kali?',
+          en: 'Watch the Target dance play once. Tap "Watch the dance" to see it again.',
+          id: 'Tonton tarian Target main sekali. Tekan "Tonton tarian" untuk ulang.',
         },
       },
       {
         icon: '➕',
         text: {
-          en: 'Say or tap each move to add it inside the loop body.',
-          id: 'Ucapkan atau sentuh tiap gerakan untuk menambah ke loop.',
+          en: 'Add moves to the loop body so it matches one repetition of the target.',
+          id: 'Tambah gerakan ke loop supaya sama dengan satu putaran target.',
         },
       },
       {
         icon: '🔁',
         text: {
-          en: 'Say a number ("three") or tap +/− to set how many times.',
-          id: 'Ucapkan angka ("tiga") atau tekan +/− untuk jumlah ulang.',
+          en: 'Use +/− or say a number ("three") to set how many times the loop repeats.',
+          id: 'Pakai +/− atau sebut angka ("tiga") untuk jumlah ulang.',
+        },
+      },
+      {
+        icon: '👀',
+        text: {
+          en: 'Check "Your loop becomes" — that\'s what will play.',
+          id: 'Periksa "Hasil loop kamu" — itu yang akan dimainkan.',
         },
       },
       {
         icon: '▶️',
         text: {
-          en: 'Say "go" to play. The preview shows what unfolds.',
-          id: 'Ucapkan "jalan" untuk memainkan. Pratinjau di bawah.',
+          en: 'Say "go" or tap Go. Match the target exactly to win.',
+          id: 'Sebut "jalan" atau tekan Jalan. Cocok dengan target = menang.',
         },
       },
     ],
     voiceTips: {
-      en: ['"clap"', '"jump"', '"three"', '"go"'],
-      id: ['"tepuk"', '"lompat"', '"tiga"', '"jalan"'],
+      en: ['"clap"', '"jump"', '"three"', '"go"', '"watch"'],
+      id: ['"tepuk"', '"lompat"', '"tiga"', '"jalan"', '"lihat"'],
     },
   },
 }
@@ -202,13 +253,14 @@ export function useIntro(type: WorksheetType) {
   const locale = useLocale()
 
   const goal = computed(() => def.goal[locale.value])
+  const win = computed(() => def.win[locale.value])
   const steps = computed(() => def.steps.map(s => ({
     icon: s.icon,
     text: s.text[locale.value],
   })))
   const tips = computed(() => def.voiceTips[locale.value as 'en' | 'id'])
 
-  return { goal, steps, tips }
+  return { goal, win, steps, tips }
 }
 
 export type { IntroStep, IntroDefinition }

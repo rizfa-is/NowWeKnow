@@ -7,6 +7,8 @@ interface UseVoiceOptions {
   continuous?: boolean
   /** Misrecognitions tolerated before signaling fall-back to touch. */
   maxAttempts?: number
+  /** How many alternative transcripts to ask for per utterance. */
+  maxAlternatives?: number
 }
 
 /**
@@ -27,9 +29,11 @@ export function normalize(input: string): string {
  * Match a transcript against a phrase dictionary.
  * Returns the matching key, or null when nothing matched.
  *
- * Each transcript word is compared against every phrase in the dictionary.
- * A match wins on exact normalized equality OR substring containment in
- * either direction (so "i think it's red" still matches "red").
+ * Matching layers (most strict to most permissive):
+ *   1. Exact normalized equality
+ *   2. Substring containment in either direction (handles "i think red")
+ *   3. Word-level membership (handles trailing punctuation, particles)
+ *   4. Locale fallback (try the other locale if active locale failed)
  */
 export function matchPhrase(
   transcript: string,
@@ -49,16 +53,36 @@ export function matchPhrase(
         if (!norm) continue
         if (heard === norm) return key
         if (heard.includes(norm) || norm.includes(heard)) return key
-        // Word-level match (handles "merah." or "the merah" cases)
         if (heardWords.includes(norm)) return key
+        // Multi-word phrase fully contained as a sequence in the words
+        if (norm.includes(' ')) {
+          const phraseWords = norm.split(' ')
+          for (let i = 0; i <= heardWords.length - phraseWords.length; i++) {
+            if (phraseWords.every((w, j) => heardWords[i + j] === w)) return key
+          }
+        }
       }
     }
     return null
   }
 
-  // Try the active locale first, then fall back to the other locale so
-  // a kid speaking the wrong language still gets credit.
   return tryLocale(locale) ?? tryLocale(locale === 'en' ? 'id' : 'en')
+}
+
+/**
+ * Match across multiple candidate transcripts. Useful when the SpeechRecognition
+ * API returns alternatives; we accept the first candidate that resolves.
+ */
+export function matchPhraseAny(
+  transcripts: string[],
+  dict: PhraseDictionary,
+  locale: Locale,
+): { matched: string | null, transcript: string } {
+  for (const t of transcripts) {
+    const m = matchPhrase(t, dict, locale)
+    if (m) return { matched: m, transcript: t }
+  }
+  return { matched: null, transcript: transcripts[0] ?? '' }
 }
 
 /**
@@ -67,14 +91,16 @@ export function matchPhrase(
  * - locale-aware language tag (id-ID / en-US) that follows useLocale()
  * - per-prompt listen/stop with attempt counting
  * - normalized matching against a phrase dictionary (case + diacritic insensitive)
- * - `resultCount` ref that worksheets watch to react to any new transcript,
- *   sidestepping browser-specific quirks with the `isFinal` flag
+ * - alternatives: collects up to `maxAlternatives` candidate transcripts and
+ *   matches across all of them, dramatically improving recognition for kids
+ * - resultCount ref bumps when any new transcript arrives
  * - graceful fallback signal when the API is unsupported or denied
  */
 export function useVoice(options: UseVoiceOptions = {}) {
   const {
     continuous = false,
     maxAttempts = 2,
+    maxAlternatives = 3,
   } = options
 
   const locale = useLocale()
@@ -84,27 +110,47 @@ export function useVoice(options: UseVoiceOptions = {}) {
     lang,
     continuous,
     interimResults: false,
-    maxAlternatives: 1,
+    maxAlternatives,
   })
 
   const attempts = ref(0)
   const fallbackToTouch = ref(false)
-  /**
-   * Bumps every time a final transcript is received.
-   * Worksheets watch this to evaluate, regardless of how a particular
-   * browser flips `isFinal` between interim and final events.
-   */
   const resultCount = ref(0)
+  /**
+   * Latest list of candidate transcripts returned by the recognizer.
+   * Filled by the dedicated event listener below since VueUse only
+   * exposes the top transcript via its `result` ref.
+   */
+  const candidates = ref<string[]>([])
 
-  // VueUse's `result` ref holds the latest transcript. With interimResults
-  // off, every emission is final — so any change to the ref means a new
-  // utterance has been recognized.
   if (import.meta.client) {
-    watch(speech.result, (transcript) => {
-      if (typeof transcript === 'string' && transcript.length > 0) {
-        resultCount.value += 1
-      }
-    })
+    const attachListener = () => {
+      const rec = speech.recognition as unknown as EventTarget | undefined
+      if (!rec) return
+      rec.addEventListener('result', (event: Event) => {
+        const e = event as Event & {
+          results: ArrayLike<{
+            length: number
+            isFinal: boolean
+            [index: number]: { transcript: string }
+          }>
+          resultIndex: number
+        }
+        const last = e.results[e.results.length - 1]
+        if (!last) return
+        const list: string[] = []
+        for (let i = 0; i < last.length; i++) {
+          const alt = last[i]
+          if (alt && typeof alt.transcript === 'string') list.push(alt.transcript)
+        }
+        if (list.length > 0) {
+          candidates.value = list
+          resultCount.value += 1
+        }
+      })
+    }
+    onMounted(attachListener)
+    watch(lang, () => nextTick(attachListener))
   }
 
   function listen() {
@@ -112,24 +158,26 @@ export function useVoice(options: UseVoiceOptions = {}) {
       fallbackToTouch.value = true
       return
     }
+    candidates.value = []
     speech.start()
   }
 
   function reset() {
     attempts.value = 0
     fallbackToTouch.value = false
+    candidates.value = []
   }
 
   /**
-   * Evaluate the latest transcript against a phrase dictionary.
-   * Increments attempts and trips the touch fallback flag on failure.
-   *
-   * The dictionary itself is the whitelist: only known answer words
-   * resolve to a match, so we don't need a separate confidence gate.
+   * Evaluate the latest utterance against a phrase dictionary.
+   * Considers all alternatives the recognizer returned, so a kid's
+   * "merah" stays accepted even if the top guess was "marah".
    */
   function evaluate(dict: PhraseDictionary) {
-    const transcript = speech.result.value || ''
-    const matched = matchPhrase(transcript, dict, locale.value)
+    const list = candidates.value.length > 0
+      ? candidates.value
+      : [speech.result.value || '']
+    const { matched, transcript } = matchPhraseAny(list, dict, locale.value)
     const success = Boolean(matched)
 
     if (!success) {
@@ -139,6 +187,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
 
     return {
       transcript,
+      candidates: list,
       matched: success ? matched : null,
       attempts: attempts.value,
     }
@@ -150,6 +199,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
     isListening: speech.isListening,
     isFinal: speech.isFinal,
     transcript: speech.result,
+    candidates,
     resultCount,
     attempts,
     fallbackToTouch,

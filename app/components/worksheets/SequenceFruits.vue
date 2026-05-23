@@ -8,10 +8,22 @@ interface SequenceItem {
   name: { en: string, id: string }
 }
 
+interface SequencePrompt {
+  /**
+   * Items in the correct final order. The runtime shuffles them
+   * for display, then validates against this canonical order.
+   */
+  items: SequenceItem[]
+  /**
+   * Localized rule, shown above the slots so kids know what kind
+   * of sort is expected ("smallest to largest", "by alphabet",
+   * "by the order they happen", etc.).
+   */
+  rule: LocalizedString
+}
+
 interface SequenceData {
-  prompts: Array<{
-    items: SequenceItem[] // Already in correct order
-  }>
+  prompts: SequencePrompt[]
 }
 
 const props = defineProps<{
@@ -31,15 +43,12 @@ const showHint = ref(false)
 const current = computed(() => prompts.value[stepIndex.value])
 const done = computed(() => stepIndex.value >= prompts.value.length)
 
-// User's current selection in order. Each entry is the item.id.
 const picked = ref<string[]>([])
-
-// Shuffled tray of items the user can pick from.
 const tray = ref<SequenceItem[]>([])
 
 const promptCopy = computed<Record<Locale, string>>(() => ({
-  en: 'Tap or say each item in the right order.',
-  id: 'Sentuh atau sebutkan setiap benda sesuai urutan.',
+  en: 'Sort them in this order:',
+  id: 'Susun mereka dengan urutan:',
 }))
 
 const positionWords: Record<number, LocalizedString> = {
@@ -69,31 +78,44 @@ const itemPhrases = computed<PhraseDictionary>(() => {
 
 const hint = computed<LocalizedString>(() => ({
   en: expectedItem.value
-    ? `Next: ${expectedItem.value.name.en}`
+    ? `Next: say or tap "${expectedItem.value.name.en}".`
     : '',
   id: expectedItem.value
-    ? `Selanjutnya: ${expectedItem.value.name.id}`
+    ? `Selanjutnya: ucapkan atau sentuh "${expectedItem.value.name.id}".`
     : '',
 }))
 
 watch(current, (c) => {
   picked.value = []
-  if (c) tray.value = [...c.items].sort(() => Math.random() - 0.5)
+  showHint.value = false
+  if (c) {
+    // Shuffle for the tray, but make sure it's not already sorted.
+    let shuffled = [...c.items]
+    let safety = 0
+    do {
+      shuffled = shuffled.sort(() => Math.random() - 0.5)
+      safety += 1
+    } while (
+      safety < 5
+      && shuffled.every((item, i) => item.id === c.items[i]?.id)
+      && c.items.length > 1
+    )
+    tray.value = shuffled
+  }
 }, { immediate: true })
 
 function pickItem(item: SequenceItem) {
-  if (!expectedItem.value) return
+  if (!expectedItem.value || feedback.value === 'correct') return
   if (item.id === expectedItem.value.id) {
     picked.value.push(item.id)
     voice.reset()
     feedback.value = 'correct'
     setTimeout(() => { feedback.value = 'idle' }, 500)
     if (picked.value.length === current.value?.items.length) {
-      // Whole sequence complete -> advance
+      // Whole sequence complete -> advance after a beat
       setTimeout(() => {
         stepIndex.value += 1
-        showHint.value = false
-      }, 700)
+      }, 900)
     }
   }
   else {
@@ -142,6 +164,15 @@ const completeMsg = computed(() => (locale.value === 'id'
   >
     <div v-if="!done && current" class="seq">
       <p class="seq__prompt">{{ promptCopy[locale] }}</p>
+      <motion.p
+        :key="stepIndex"
+        class="seq__rule"
+        :initial="{ opacity: 0, y: 6 }"
+        :animate="{ opacity: 1, y: 0 }"
+        :transition="{ duration: 0.3 }"
+      >
+        {{ current.rule[locale] }}
+      </motion.p>
 
       <div class="seq__plan" :aria-label="locale === 'id' ? 'Urutan' : 'Order'">
         <div
@@ -212,29 +243,42 @@ const completeMsg = computed(() => (locale.value === 'id'
 <style scoped>
 .seq {
   display: grid;
-  gap: 1.5rem;
+  gap: 1rem;
   justify-items: center;
   width: 100%;
   max-width: 800px;
 }
 .seq__prompt {
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
-  font-weight: 600;
+  font-size: clamp(0.95rem, 1.6vw, 1.1rem);
+  font-weight: 500;
+  color: var(--color-fg-muted);
   margin: 0;
   text-align: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.seq__rule {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  text-align: center;
+  color: var(--color-fg);
 }
 
 .seq__plan {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(110px, 1fr);
-  gap: 0.75rem;
+  grid-auto-columns: minmax(90px, 1fr);
+  gap: 0.5rem;
   width: 100%;
   max-width: 720px;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
 }
 .seq__slot {
-  height: 120px;
+  height: clamp(96px, 18vw, 120px);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 2px dashed rgba(31, 37, 64, 0.18);
@@ -256,12 +300,12 @@ const completeMsg = computed(() => (locale.value === 'id'
 }
 .seq__slot-num {
   font-family: var(--font-display);
-  font-size: 0.85rem;
+  font-size: clamp(0.7rem, 1.5vw, 0.85rem);
   color: var(--color-fg-muted);
   letter-spacing: 0.06em;
 }
 .seq__slot-item {
-  font-size: 2.5rem;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
 }
 
 .seq__voice {
@@ -288,7 +332,7 @@ const completeMsg = computed(() => (locale.value === 'id'
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 .seq__chip {
   display: inline-grid;
@@ -302,8 +346,8 @@ const completeMsg = computed(() => (locale.value === 'id'
   box-shadow: var(--shadow-card);
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1rem;
-  height: 64px;
+  font-size: clamp(0.9rem, 1.6vw, 1rem);
+  height: clamp(56px, 10vw, 64px);
   transition: transform 0.15s;
 }
 .seq__chip:not(:disabled):active {
@@ -314,7 +358,7 @@ const completeMsg = computed(() => (locale.value === 'id'
   cursor: not-allowed;
 }
 .seq__chip-emoji {
-  font-size: 2rem;
+  font-size: clamp(1.5rem, 4vw, 2rem);
 }
 
 .seq__done {

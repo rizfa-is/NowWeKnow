@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import type { Locale, LocalizedString, PhraseDictionary, WorksheetMeta } from '~/types/worksheet'
+import type { LocalizedString, PhraseDictionary, WorksheetMeta } from '~/types/worksheet'
 
 interface MazeLevel {
   cols: number
@@ -29,11 +29,11 @@ const voice = useVoice()
 const stepIndex = ref(0)
 const feedback = ref<'idle' | 'correct' | 'wrong'>('idle')
 const showHint = ref(false)
+const runStatus = ref<'idle' | 'running' | 'won' | 'crashed' | 'shortfall'>('idle')
 
 const current = computed(() => levels.value[stepIndex.value])
 const done = computed(() => stepIndex.value >= levels.value.length)
 
-// User's plan: ordered list of moves before execution.
 const plan = ref<Dir[]>([])
 const isRunning = ref(false)
 const bunny = ref<[number, number]>([0, 0])
@@ -52,21 +52,35 @@ const dirEmoji: Record<Dir, string> = {
 }
 
 const promptCopy = computed<LocalizedString>(() => ({
-  en: 'Plan the bunny\'s path. Then say "go".',
-  id: 'Susun rencana jalan kelinci. Lalu sebutkan "jalan".',
+  en: 'Plan a path so the bunny touches the carrot. Then say "go".',
+  id: 'Susun jalur agar kelinci menyentuh wortel. Lalu sebutkan "jalan".',
 }))
 
-const hint = computed<LocalizedString>(() => ({
-  en: 'Add steps with voice ("up", "right") or arrows. Say "go" to run.',
-  id: 'Tambahkan langkah pakai suara ("atas", "kanan") atau panah. Sebut "jalan" untuk menjalankan.',
-}))
+const hint = computed<LocalizedString>(() => {
+  if (runStatus.value === 'crashed') {
+    return {
+      en: 'The bunny hit a wall or went out of the grid. Tap reset and try again.',
+      id: 'Kelinci kena dinding atau keluar dari kotak. Tekan ulang dan coba lagi.',
+    }
+  }
+  if (runStatus.value === 'shortfall') {
+    return {
+      en: 'The plan finished but the bunny missed the carrot. Add more steps.',
+      id: 'Rencana selesai tapi belum sampai wortel. Tambah langkah.',
+    }
+  }
+  return {
+    en: 'Add steps with voice ("up", "right") or arrows. Say "go" to run.',
+    id: 'Tambah langkah pakai suara ("atas", "kanan") atau panah. Sebut "jalan" untuk menjalankan.',
+  }
+})
 
 const tapToTalk = computed(() => (locale.value === 'id' ? 'Tekan dan bicara' : 'Tap to speak'))
 const goLabel = computed(() => (locale.value === 'id' ? 'Jalan' : 'Go'))
 const resetLabel = computed(() => (locale.value === 'id' ? 'Ulang' : 'Reset'))
 const completeMsg = computed(() => (locale.value === 'id'
-  ? 'Maze terpecahkan!'
-  : 'Maze cleared!'))
+  ? 'Semua labirin terpecahkan!'
+  : 'All mazes cleared!'))
 
 const wallSet = computed(() => {
   const set = new Set<string>()
@@ -79,12 +93,14 @@ watch(current, (lvl) => {
   bunny.value = [...lvl.start] as [number, number]
   plan.value = []
   isRunning.value = false
+  runStatus.value = 'idle'
   voice.reset()
   showHint.value = false
 }, { immediate: true })
 
 function addStep(d: Dir) {
   if (isRunning.value) return
+  if (runStatus.value !== 'idle' && runStatus.value !== 'running') return
   plan.value.push(d)
 }
 
@@ -92,13 +108,18 @@ function clearPlan() {
   if (isRunning.value || !current.value) return
   plan.value = []
   bunny.value = [...current.value.start] as [number, number]
+  runStatus.value = 'idle'
 }
 
 async function runPlan() {
   if (isRunning.value || !current.value) return
+  if (plan.value.length === 0) return
   isRunning.value = true
+  runStatus.value = 'running'
   bunny.value = [...current.value.start] as [number, number]
-  await new Promise(r => setTimeout(r, 200))
+  await new Promise(r => setTimeout(r, 250))
+
+  const [gx, gy] = current.value.goal
 
   for (const move of plan.value) {
     const [x, y] = bunny.value
@@ -111,28 +132,34 @@ async function runPlan() {
     const inBounds = nx >= 0 && nx < current.value.cols && ny >= 0 && ny < current.value.rows
     const isWall = wallSet.value.has(`${nx},${ny}`)
     if (!inBounds || isWall) {
+      // Crash: stop here, reveal failure clearly.
+      runStatus.value = 'crashed'
       feedback.value = 'wrong'
       isRunning.value = false
-      setTimeout(() => { feedback.value = 'idle' }, 800)
+      setTimeout(() => { feedback.value = 'idle' }, 900)
       return
     }
     bunny.value = [nx, ny]
-    await new Promise(r => setTimeout(r, 380))
+    await new Promise(r => setTimeout(r, 420))
+
+    // Win the moment the bunny touches the carrot. Kids find
+    // "land exactly on the last step" too punishing for SD-low.
+    if (nx === gx && ny === gy) {
+      runStatus.value = 'won'
+      feedback.value = 'correct'
+      setTimeout(() => {
+        feedback.value = 'idle'
+        stepIndex.value += 1
+      }, 1200)
+      isRunning.value = false
+      return
+    }
   }
 
-  const [bx, by] = bunny.value
-  const [gx, gy] = current.value.goal
-  if (bx === gx && by === gy) {
-    feedback.value = 'correct'
-    setTimeout(() => {
-      feedback.value = 'idle'
-      stepIndex.value += 1
-    }, 1000)
-  }
-  else {
-    feedback.value = 'wrong'
-    setTimeout(() => { feedback.value = 'idle' }, 800)
-  }
+  // Plan ran out without reaching the goal.
+  runStatus.value = 'shortfall'
+  feedback.value = 'wrong'
+  setTimeout(() => { feedback.value = 'idle' }, 900)
   isRunning.value = false
 }
 
@@ -153,13 +180,6 @@ watch(voice.resultCount, (n) => {
   else addStep(result.matched as Dir)
 })
 
-const cellStyle = computed(() => current.value
-  ? {
-    gridTemplateColumns: `repeat(${current.value.cols}, 1fr)`,
-    gridTemplateRows: `repeat(${current.value.rows}, 1fr)`,
-  }
-  : {})
-
 function isStart(x: number, y: number): boolean {
   return current.value ? current.value.start[0] === x && current.value.start[1] === y : false
 }
@@ -169,6 +189,17 @@ function isGoal(x: number, y: number): boolean {
 function isWall(x: number, y: number): boolean {
   return wallSet.value.has(`${x},${y}`)
 }
+
+const boardStyle = computed(() => current.value
+  ? {
+    '--cols': current.value.cols,
+    '--rows': current.value.rows,
+    '--bx': bunny.value[0],
+    '--by': bunny.value[1],
+    gridTemplateColumns: `repeat(${current.value.cols}, 1fr)`,
+    gridTemplateRows: `repeat(${current.value.rows}, 1fr)`,
+  } as Record<string, string | number>
+  : {})
 </script>
 
 <template>
@@ -185,7 +216,7 @@ function isWall(x: number, y: number): boolean {
       <p class="mz__prompt">{{ promptCopy[locale] }}</p>
 
       <div class="mz__layout">
-        <div class="mz__board" :style="cellStyle">
+        <div class="mz__board" :style="boardStyle">
           <template v-for="y in current.rows" :key="`row-${y}`">
             <div
               v-for="x in current.cols"
@@ -197,19 +228,12 @@ function isWall(x: number, y: number): boolean {
                 'is-goal': isGoal(x - 1, y - 1),
               }"
             >
-              <span v-if="isGoal(x - 1, y - 1) && !isStart(x - 1, y - 1)">🥕</span>
+              <span v-if="isGoal(x - 1, y - 1)" class="mz__goal">🥕</span>
+              <span v-else-if="isStart(x - 1, y - 1)" class="mz__home">🏠</span>
+              <span v-else-if="isWall(x - 1, y - 1)" class="mz__wall" aria-hidden="true">▮</span>
             </div>
           </template>
-          <motion.div
-            class="mz__bunny"
-            :animate="{
-              gridColumnStart: bunny[0] + 1,
-              gridRowStart: bunny[1] + 1,
-            }"
-            :transition="{ type: 'spring', stiffness: 280, damping: 22 }"
-          >
-            🐰
-          </motion.div>
+          <span class="mz__bunny" aria-label="bunny">🐰</span>
         </div>
 
         <div class="mz__panel">
@@ -222,17 +246,28 @@ function isWall(x: number, y: number): boolean {
               <span v-if="plan.length === 0" class="mz__plan-empty">
                 {{ locale === 'id' ? 'Belum ada langkah' : 'No steps yet' }}
               </span>
-              <span
+              <motion.span
                 v-for="(d, i) in plan"
                 :key="`p-${i}`"
                 class="mz__plan-step"
+                :initial="{ scale: 0.6, opacity: 0 }"
+                :animate="{ scale: 1, opacity: 1 }"
+                :transition="{ duration: 0.18 }"
               >
                 {{ dirEmoji[d] }}
-              </span>
+              </motion.span>
             </div>
+            <p
+              v-if="runStatus === 'crashed' || runStatus === 'shortfall'"
+              class="mz__status is-bad"
+            >
+              {{ runStatus === 'crashed'
+                ? (locale === 'id' ? 'Kena dinding!' : 'Hit a wall!')
+                : (locale === 'id' ? 'Belum sampai wortel' : 'Did not reach the carrot') }}
+            </p>
           </div>
 
-          <div class="mz__pad">
+          <div class="mz__pad" :aria-label="locale === 'id' ? 'Tombol arah' : 'Direction pad'">
             <span></span>
             <button class="mz__arrow" :disabled="isRunning" @click="addStep('up')">↑</button>
             <span></span>
@@ -306,7 +341,7 @@ function isWall(x: number, y: number): boolean {
 }
 .mz__prompt {
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-size: clamp(1rem, 2vw, 1.4rem);
   font-weight: 600;
   margin: 0;
   text-align: center;
@@ -318,31 +353,39 @@ function isWall(x: number, y: number): boolean {
   gap: 1.5rem;
   align-items: start;
 }
-@media (max-width: 720px) {
+@media (max-width: 820px) {
   .mz__layout {
     grid-template-columns: 1fr;
   }
 }
 
 .mz__board {
+  /* CSS variables drive cell-perfect bunny positioning regardless of
+     how many cols/rows a level has. */
+  --pad: clamp(0.5rem, 1.5vw, 0.75rem);
+  --gap: clamp(3px, 0.6vw, 5px);
+  --cell-w: calc((100% - var(--pad) * 2 - var(--gap) * (var(--cols) - 1)) / var(--cols));
+  --cell-h: calc((100% - var(--pad) * 2 - var(--gap) * (var(--rows) - 1)) / var(--rows));
+
   position: relative;
   width: 100%;
   aspect-ratio: 1;
   display: grid;
-  gap: 4px;
+  gap: var(--gap);
   background: var(--color-bg-deep);
   border-radius: var(--radius-md);
-  padding: 0.75rem;
+  padding: var(--pad);
 }
 .mz__tile {
   background: var(--color-surface);
   border-radius: var(--radius-sm);
   display: grid;
   place-items: center;
-  font-size: 1.5rem;
+  font-size: clamp(0.9rem, 2.5vw, 1.5rem);
 }
 .mz__tile.is-wall {
-  background: var(--color-fg);
+  background: #2a2f4a;
+  color: rgba(255, 255, 255, 0.15);
 }
 .mz__tile.is-start {
   background: var(--color-accent-soft);
@@ -351,13 +394,28 @@ function isWall(x: number, y: number): boolean {
   background: rgba(6, 214, 160, 0.18);
   border: 2px dashed var(--color-success);
 }
+.mz__goal,
+.mz__home {
+  font-size: 1.25em;
+}
+.mz__wall {
+  font-size: 0.7em;
+}
+
 .mz__bunny {
-  grid-area: 1 / 1;
+  position: absolute;
+  width: var(--cell-w);
+  height: var(--cell-h);
+  left: calc(var(--pad) + var(--bx) * (var(--cell-w) + var(--gap)));
+  top: calc(var(--pad) + var(--by) * (var(--cell-h) + var(--gap)));
   display: grid;
   place-items: center;
-  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-size: clamp(1.4rem, 4vw, 2.25rem);
   pointer-events: none;
   z-index: 2;
+  transition:
+    left 0.36s cubic-bezier(0.4, 0, 0.2, 1),
+    top 0.36s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .mz__panel {
@@ -403,17 +461,26 @@ function isWall(x: number, y: number): boolean {
   font-style: italic;
   font-size: 0.9rem;
 }
+.mz__status {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.mz__status.is-bad {
+  color: var(--color-error);
+}
 
 .mz__pad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   width: 100%;
-  max-width: 220px;
+  max-width: 240px;
   justify-self: center;
 }
 .mz__arrow {
-  height: 56px;
+  height: clamp(48px, 12vw, 56px);
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -436,7 +503,7 @@ function isWall(x: number, y: number): boolean {
 .mz__go,
 .mz__clear {
   flex: 1;
-  height: 56px;
+  height: clamp(48px, 12vw, 56px);
   border: 0;
   border-radius: var(--radius-md);
   font-family: var(--font-display);

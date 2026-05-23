@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import type { Locale, LocalizedString, PhraseDictionary, WorksheetMeta } from '~/types/worksheet'
+import type { LocalizedString, PhraseDictionary, WorksheetMeta } from '~/types/worksheet'
 
 interface MovePrompt {
   steps: number // how many "right" steps to reach the carrot
@@ -37,14 +37,23 @@ const movePhrases: PhraseDictionary = {
 }
 
 const promptCopy = computed<LocalizedString>(() => ({
-  en: `Move the bunny to the carrot. Say "right" or tap →`,
-  id: `Pindahkan kelinci ke wortel. Sebutkan "kanan" atau sentuh →`,
+  en: `Land exactly on the carrot. Say "right" or tap →`,
+  id: `Berhenti tepat di wortel. Sebutkan "kanan" atau sentuh →`,
 }))
 
-const hint = computed<LocalizedString>(() => ({
-  en: `${target.value - bunnyPos.value} more step${target.value - bunnyPos.value === 1 ? '' : 's'} to go.`,
-  id: `${target.value - bunnyPos.value} langkah lagi.`,
-}))
+const remaining = computed(() => target.value - bunnyPos.value)
+const hint = computed<LocalizedString>(() => {
+  if (remaining.value < 0) {
+    return {
+      en: `You went past the carrot. Say "left" to step back.`,
+      id: `Kelebihan langkah. Ucapkan "kiri" untuk mundur.`,
+    }
+  }
+  return {
+    en: `${remaining.value} more step${remaining.value === 1 ? '' : 's'} to go.`,
+    id: `${remaining.value} langkah lagi.`,
+  }
+})
 
 const tapToTalk = computed(() => (locale.value === 'id' ? 'Tekan dan bicara' : 'Tap to speak'))
 const completeMsg = computed(() => (locale.value === 'id'
@@ -58,6 +67,7 @@ watch(stepIndex, () => {
 })
 
 function moveOne(dir: 'right' | 'left') {
+  if (feedback.value === 'correct') return
   if (dir === 'right') bunnyPos.value = Math.min(trackSize.value - 1, bunnyPos.value + 1)
   else bunnyPos.value = Math.max(0, bunnyPos.value - 1)
 
@@ -66,13 +76,11 @@ function moveOne(dir: 'right' | 'left') {
     setTimeout(() => {
       feedback.value = 'idle'
       stepIndex.value += 1
-    }, 900)
+    }, 1100)
   }
   else if (bunnyPos.value > target.value) {
     feedback.value = 'wrong'
-    setTimeout(() => {
-      feedback.value = 'idle'
-    }, 700)
+    setTimeout(() => { feedback.value = 'idle' }, 700)
   }
 }
 
@@ -115,17 +123,18 @@ watch(voice.resultCount, (n) => {
           v-for="i in trackSize"
           :key="i"
           class="mv__cell"
-          :class="{ 'is-target': i - 1 === target }"
+          :class="{ 'is-target': i - 1 === target, 'is-bunny': i - 1 === bunnyPos }"
         >
-          <span v-if="i - 1 === target" class="mv__cell-icon">🥕</span>
+          <motion.span
+            v-if="i - 1 === bunnyPos"
+            layout-id="bunny"
+            class="mv__bunny"
+            :transition="{ type: 'spring', stiffness: 360, damping: 26 }"
+          >
+            🐰
+          </motion.span>
+          <span v-else-if="i - 1 === target" class="mv__cell-icon" aria-label="carrot">🥕</span>
         </div>
-        <motion.div
-          class="mv__bunny"
-          :animate="{ x: `calc(${bunnyPos} * (100% / ${trackSize}))` }"
-          :transition="{ type: 'spring', stiffness: 320, damping: 22 }"
-        >
-          🐰
-        </motion.div>
       </div>
 
       <div class="mv__voice">
@@ -143,8 +152,8 @@ watch(voice.resultCount, (n) => {
       </div>
 
       <div class="mv__pad">
-        <button type="button" class="mv__pad-btn" @click="moveOne('left')">←</button>
-        <button type="button" class="mv__pad-btn is-primary" @click="moveOne('right')">→</button>
+        <button type="button" class="mv__pad-btn" :aria-label="locale === 'id' ? 'Mundur' : 'Step left'" @click="moveOne('left')">←</button>
+        <button type="button" class="mv__pad-btn is-primary" :aria-label="locale === 'id' ? 'Maju' : 'Step right'" @click="moveOne('right')">→</button>
       </div>
     </div>
 
@@ -167,28 +176,27 @@ watch(voice.resultCount, (n) => {
 <style scoped>
 .mv {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
   justify-items: center;
   width: 100%;
-  max-width: 800px;
+  max-width: 720px;
 }
 .mv__prompt {
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-size: clamp(1rem, 2vw, 1.4rem);
   font-weight: 600;
   margin: 0;
   text-align: center;
 }
 
 .mv__track {
-  position: relative;
   width: 100%;
   display: grid;
   grid-template-columns: repeat(var(--cells), 1fr);
-  gap: 6px;
+  gap: clamp(4px, 1vw, 8px);
   background: var(--color-bg-deep);
   border-radius: var(--radius-md);
-  padding: 1rem;
+  padding: clamp(0.5rem, 1.5vw, 1rem);
 }
 .mv__cell {
   aspect-ratio: 1;
@@ -196,22 +204,23 @@ watch(voice.resultCount, (n) => {
   background: var(--color-surface);
   display: grid;
   place-items: center;
-  font-size: 2rem;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  transition: background 0.2s, transform 0.2s;
 }
 .mv__cell.is-target {
   background: var(--color-accent-soft);
   border: 2px dashed var(--color-accent);
 }
+.mv__cell.is-bunny {
+  background: var(--color-success);
+}
+.mv__cell.is-bunny.is-target {
+  background: var(--color-success);
+  border-color: var(--color-success);
+}
 .mv__bunny {
-  position: absolute;
-  top: 50%;
-  left: calc(1rem + 6px);
-  transform: translateY(-50%);
-  font-size: clamp(2rem, 5vw, 3rem);
-  width: calc((100% - 2rem - 6px * (var(--cells) - 1)) / var(--cells));
-  display: grid;
-  place-items: center;
-  pointer-events: none;
+  font-size: clamp(1.5rem, 5vw, 2.5rem);
+  display: inline-block;
 }
 
 .mv__voice {
@@ -236,13 +245,13 @@ watch(voice.resultCount, (n) => {
   gap: 1rem;
 }
 .mv__pad-btn {
-  width: 96px;
-  height: 96px;
+  width: clamp(72px, 16vw, 96px);
+  height: clamp(72px, 16vw, 96px);
   border: 0;
   border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-fg);
-  font-size: 2.5rem;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
   font-weight: 700;
   box-shadow: var(--shadow-card);
   transition: transform 0.15s;
@@ -262,7 +271,7 @@ watch(voice.resultCount, (n) => {
   gap: 1.5rem;
 }
 .mv__done-emoji {
-  font-size: 3.5rem;
+  font-size: clamp(2.5rem, 8vw, 4rem);
   letter-spacing: 0.5rem;
 }
 .mv__home-btn {

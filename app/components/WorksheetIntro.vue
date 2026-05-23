@@ -13,12 +13,13 @@ defineEmits<{
 }>()
 
 const locale = useLocale()
-const { goal, steps, tips } = useIntro(props.type)
+const { goal, win, steps, tips } = useIntro(props.type)
 
 const titleText = computed(() => props.title[locale.value])
 const startLabel = computed(() => (locale.value === 'id' ? 'Ayo mulai' : "Let's start"))
 const tipsLabel = computed(() => (locale.value === 'id' ? 'Coba ucapkan' : 'Try saying'))
 const goalLabel = computed(() => (locale.value === 'id' ? 'Tujuan' : 'Goal'))
+const winLabel = computed(() => (locale.value === 'id' ? 'Cara menang' : 'How to win'))
 const howLabel = computed(() => (locale.value === 'id' ? 'Cara main' : 'How to play'))
 </script>
 
@@ -52,6 +53,11 @@ const howLabel = computed(() => (locale.value === 'id' ? 'Cara main' : 'How to p
         <section class="intro__goal">
           <span class="intro__goal-label">{{ goalLabel }}</span>
           <p class="intro__goal-text">{{ goal }}</p>
+        </section>
+
+        <section class="intro__win">
+          <span class="intro__win-label">🏆 {{ winLabel }}</span>
+          <p class="intro__win-text">{{ win }}</p>
         </section>
 
         <ol class="intro__steps">
@@ -141,6 +147,28 @@ const howLabel = computed(() => (locale.value === 'id' ? 'Cara main' : 'How to p
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.1rem;
+}
+
+.intro__win {
+  background: rgba(6, 214, 160, 0.14);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.1rem;
+  border-left: 4px solid var(--color-success);
+}
+.intro__win-label {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-success);
+  margin-bottom: 0.25rem;
+}
+.intro__win-text {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.45;
 }
 
 .intro__steps {
