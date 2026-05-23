@@ -143,7 +143,7 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
 <style scoped>
 .picker {
   min-height: 100dvh;
-  padding: 1.5rem 2rem 4rem;
+  padding: clamp(1rem, 4vw, 1.5rem) clamp(1rem, 4vw, 2rem) 4rem;
   max-width: 1200px;
   margin: 0 auto;
 }
@@ -151,7 +151,8 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 3rem;
+  margin-bottom: clamp(1.5rem, 5vw, 3rem);
+  gap: 1rem;
 }
 .picker__brand {
   display: inline-flex;
@@ -159,7 +160,7 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
   gap: 0.6rem;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: clamp(1rem, 3vw, 1.1rem);
 }
 .picker__brand-mark {
   color: var(--color-accent);
@@ -168,35 +169,37 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
 
 .picker__hero {
   max-width: 720px;
-  margin: 0 auto 4rem;
+  margin: 0 auto clamp(2rem, 6vw, 4rem);
   text-align: center;
 }
 .picker__title {
-  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-size: clamp(1.75rem, 7vw, 3.5rem);
   font-weight: 700;
   margin: 0 0 0.75rem;
+  line-height: 1.1;
 }
 .picker__sub {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: clamp(0.95rem, 2.4vw, 1.1rem);
   color: var(--color-fg-muted);
   line-height: 1.5;
 }
 
 .picker__band {
-  margin-bottom: 3rem;
+  margin-bottom: clamp(2rem, 5vw, 3rem);
 }
 .picker__band-head {
   display: flex;
   align-items: baseline;
   gap: 1rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
   padding-bottom: 0.75rem;
   border-bottom: 2px dashed rgba(31, 37, 64, 0.08);
+  flex-wrap: wrap;
 }
 .picker__band-title {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: clamp(1.15rem, 3.5vw, 1.4rem);
   position: relative;
   padding-left: 1.25rem;
 }
@@ -213,7 +216,7 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
 }
 .picker__band-caption {
   color: var(--color-fg-muted);
-  font-size: 0.95rem;
+  font-size: clamp(0.85rem, 2.2vw, 0.95rem);
   letter-spacing: 0.04em;
 }
 
@@ -222,8 +225,8 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 0.75rem;
 }
 .picker__card {
   background: var(--color-surface);
@@ -239,32 +242,37 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
   color: inherit;
   text-decoration: none;
+  min-height: 80px;
 }
 .picker__card-icon {
-  width: 56px;
-  height: 56px;
+  width: clamp(48px, 11vw, 56px);
+  height: clamp(48px, 11vw, 56px);
   border-radius: 16px;
   display: grid;
   place-items: center;
-  font-size: 1.75rem;
+  font-size: clamp(1.5rem, 5vw, 1.75rem);
   color: var(--color-white);
 }
 .picker__card-body {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 .picker__card-title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: clamp(0.95rem, 2.5vw, 1.05rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .picker__card-concept {
   color: var(--color-fg-muted);
-  font-size: 0.85rem;
+  font-size: clamp(0.78rem, 2vw, 0.85rem);
 }
 .picker__card-arrow {
   color: var(--color-accent);
@@ -279,7 +287,7 @@ const emptyMsg = computed(() => (locale.value === 'id' ? 'Belum ada lembar kerja
 }
 
 .picker__foot {
-  margin-top: 4rem;
+  margin-top: clamp(2rem, 5vw, 4rem);
   text-align: center;
   color: var(--color-fg-muted);
   font-size: 0.85rem;

@@ -40,7 +40,7 @@ function onExit() {
     <header class="shell__top">
       <button type="button" class="shell__exit" @click="onExit">
         <span aria-hidden="true">←</span>
-        <span>{{ exitLabel }}</span>
+        <span class="shell__exit-text">{{ exitLabel }}</span>
       </button>
 
       <div class="shell__title-block">
@@ -112,8 +112,8 @@ function onExit() {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1.5rem;
-  padding: 1.25rem 1.75rem;
+  gap: clamp(0.5rem, 2vw, 1.5rem);
+  padding: clamp(0.75rem, 2.5vw, 1.25rem) clamp(0.75rem, 3vw, 1.75rem);
   border-bottom: 1px solid rgba(31, 37, 64, 0.06);
   background: var(--color-surface);
 }
@@ -121,33 +121,47 @@ function onExit() {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 1rem;
-  height: 48px;
+  padding: 0 clamp(0.75rem, 2vw, 1rem);
+  height: 44px;
+  min-height: 44px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--color-fg-muted);
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1rem;
+  font-size: clamp(0.85rem, 2.2vw, 1rem);
 }
 .shell__exit:hover {
   background: var(--color-bg);
 }
+.shell__exit-text {
+  display: inline;
+}
+@media (max-width: 520px) {
+  .shell__exit-text {
+    display: none;
+  }
+}
 .shell__title-block {
   text-align: center;
   display: grid;
-  gap: 0.5rem;
+  gap: 0.4rem;
   justify-items: center;
+  min-width: 0;
 }
 .shell__title {
-  font-size: clamp(1.25rem, 2.4vw, 1.75rem);
+  font-size: clamp(1rem, 3vw, 1.75rem);
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .shell__top-actions {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 .shell__help {
   width: 44px;
@@ -172,20 +186,20 @@ function onExit() {
   position: relative;
   display: grid;
   place-items: center;
-  padding: 2rem;
+  padding: clamp(1rem, 3vw, 2rem);
   overflow: hidden;
 }
 .shell__feedback {
   position: absolute;
-  top: 1.5rem;
+  top: 1rem;
   z-index: 5;
-  width: 96px;
-  height: 96px;
+  width: clamp(72px, 16vw, 96px);
+  height: clamp(72px, 16vw, 96px);
   border-radius: 50%;
   display: grid;
   place-items: center;
   font-family: var(--font-display);
-  font-size: 3rem;
+  font-size: clamp(2rem, 6vw, 3rem);
   color: var(--color-white);
   pointer-events: none;
 }
@@ -199,24 +213,27 @@ function onExit() {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 1.5rem;
+  padding: clamp(0.75rem, 2vw, 1rem) clamp(0.75rem, 2.5vw, 1.5rem);
   background: var(--color-surface);
   border-top: 1px solid rgba(31, 37, 64, 0.06);
+  flex-wrap: wrap;
 }
 .shell__hint-btn {
   flex-shrink: 0;
-  height: 48px;
-  padding: 0 1.25rem;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 1.1rem;
   border: 0;
   border-radius: 999px;
   background: var(--color-accent-soft);
   color: var(--color-fg);
   font-family: var(--font-display);
   font-weight: 600;
+  font-size: clamp(0.85rem, 2.2vw, 1rem);
 }
 .shell__hint-text {
   margin: 0;
   color: var(--color-fg-muted);
-  font-size: 1rem;
+  font-size: clamp(0.85rem, 2.2vw, 1rem);
 }
 </style>

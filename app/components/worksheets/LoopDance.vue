@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import type { Locale, LocalizedString, PhraseDictionary, WorksheetMeta } from '~/types/worksheet'
+import type { LocalizedString, PhraseDictionary, WorksheetMeta } from '~/types/worksheet'
 
 interface DanceMove {
   id: string
@@ -9,8 +9,9 @@ interface DanceMove {
 }
 
 interface LoopPrompt {
-  // Target sequence is `pattern` repeated `times` times.
-  pattern: string[] // move ids
+  /** Move ids inside the loop body, in order. */
+  pattern: string[]
+  /** Number of times the body repeats. */
   times: number
 }
 
@@ -33,18 +34,19 @@ const voice = useVoice()
 const stepIndex = ref(0)
 const feedback = ref<'idle' | 'correct' | 'wrong'>('idle')
 const showHint = ref(false)
+const targetPlayedOnce = ref(false)
+const isShowingTarget = ref(false)
+const targetIndex = ref(-1)
 
 const current = computed(() => prompts.value[stepIndex.value])
 const done = computed(() => stepIndex.value >= prompts.value.length)
 
 // User's working values
-const blocks = ref<string[]>([]) // ordered move ids in the loop body
+const blocks = ref<string[]>([])
 const repeatCount = ref(2)
 const isPlaying = ref(false)
 const playingIndex = ref(-1)
-const playingTotal = computed(() => blocks.value.length * repeatCount.value)
 
-// Number words for voice repeat-count entry, EN + ID, 1..10
 const numberPhrases: PhraseDictionary = {
   '1': { en: ['one', '1'], id: ['satu', '1'] },
   '2': { en: ['two', '2'], id: ['dua', '2'] },
@@ -71,81 +73,126 @@ const allPhrases = computed<PhraseDictionary>(() => ({
   ...movePhrases.value,
   run: { en: ['go', 'run', 'play', 'start'], id: ['jalan', 'mulai', 'main'] },
   reset: { en: ['reset', 'clear'], id: ['ulang', 'hapus'] },
+  show: { en: ['show', 'demo', 'watch'], id: ['lihat', 'tonton', 'demo'] },
 }))
 
 const promptCopy = computed<LocalizedString>(() => ({
-  en: 'Build the loop. Add moves, set repeats, then say "go".',
-  id: 'Bangun loop-nya. Tambah gerakan, atur jumlah ulang, lalu sebutkan "jalan".',
+  en: 'Watch the dance, then build a loop that matches it.',
+  id: 'Tonton tarian, lalu bangun loop yang sama persis.',
 }))
+
+const goalLine = computed<LocalizedString>(() => {
+  if (!current.value) return { en: '', id: '' }
+  const len = current.value.pattern.length
+  return {
+    en: `The dance is ${len} move${len === 1 ? '' : 's'}, repeated ${current.value.times} times.`,
+    id: `Tariannya ${len} gerakan, diulang ${current.value.times} kali.`,
+  }
+})
 
 const hint = computed<LocalizedString>(() => {
   if (!current.value) return { en: '', id: '' }
-  const targetLen = current.value.pattern.length
+  const moveNames = current.value.pattern
+    .map(id => moves.value.find(m => m.id === id))
+    .filter(Boolean) as DanceMove[]
   return {
-    en: `The pattern is ${targetLen} move${targetLen === 1 ? '' : 's'} repeated ${current.value.times} times.`,
-    id: `Polanya ${targetLen} gerakan diulang ${current.value.times} kali.`,
+    en: `Add ${moveNames.map(m => m.name.en).join(' + ')} to the loop body, then set repeat to ${current.value.times}.`,
+    id: `Tambahkan ${moveNames.map(m => m.name.id).join(' + ')} ke loop, lalu atur ulang ke ${current.value.times}.`,
   }
 })
 
 const tapToTalk = computed(() => (locale.value === 'id' ? 'Tekan dan bicara' : 'Tap to speak'))
 const goLabel = computed(() => (locale.value === 'id' ? 'Jalan' : 'Go'))
 const resetLabel = computed(() => (locale.value === 'id' ? 'Ulang' : 'Reset'))
-const repeatLabel = computed(() => (locale.value === 'id' ? 'Ulang sebanyak' : 'Repeat'))
-const completeMsg = computed(() => (locale.value === 'id'
-  ? 'Loop sempurna!'
-  : 'Loop nailed it!'))
+const watchLabel = computed(() => (locale.value === 'id' ? 'Tonton tarian' : 'Watch the dance'))
+const completeMsg = computed(() => (locale.value === 'id' ? 'Loop sempurna!' : 'Loop nailed it!'))
+
+const moveById = computed(() => {
+  const map = new Map<string, DanceMove>()
+  for (const m of moves.value) map.set(m.id, m)
+  return map
+})
+
+// Full target sequence the kid is trying to reproduce.
+const targetExpanded = computed<string[]>(() => {
+  if (!current.value) return []
+  const out: string[] = []
+  for (let r = 0; r < current.value.times; r++) out.push(...current.value.pattern)
+  return out
+})
+
+// What the kid's loop currently expands to.
+const yourExpanded = computed<string[]>(() => {
+  const out: string[] = []
+  for (let r = 0; r < repeatCount.value; r++) out.push(...blocks.value)
+  return out
+})
 
 watch(current, () => {
   blocks.value = []
-  repeatCount.value = 2
+  repeatCount.value = 1
   isPlaying.value = false
   playingIndex.value = -1
+  targetIndex.value = -1
+  isShowingTarget.value = false
+  targetPlayedOnce.value = false
   voice.reset()
   showHint.value = false
 }, { immediate: true })
 
+// Auto-play the target once when a new prompt loads, so kids see the goal.
+onMounted(() => { showTarget() })
+
+async function showTarget() {
+  if (!current.value || isPlaying.value || isShowingTarget.value) return
+  isShowingTarget.value = true
+  targetIndex.value = -1
+  await new Promise(res => setTimeout(res, 250))
+  for (let i = 0; i < targetExpanded.value.length; i++) {
+    targetIndex.value = i
+    await new Promise(res => setTimeout(res, 460))
+  }
+  await new Promise(res => setTimeout(res, 300))
+  targetIndex.value = -1
+  isShowingTarget.value = false
+  targetPlayedOnce.value = true
+}
+
 function addMove(id: string) {
-  if (isPlaying.value) return
+  if (isPlaying.value || isShowingTarget.value) return
   blocks.value.push(id)
 }
 
 function clearAll() {
-  if (isPlaying.value) return
+  if (isPlaying.value || isShowingTarget.value) return
   blocks.value = []
 }
 
 function setRepeat(n: number) {
-  if (isPlaying.value) return
+  if (isPlaying.value || isShowingTarget.value) return
   repeatCount.value = Math.max(1, Math.min(10, n))
 }
 
 async function play() {
-  if (isPlaying.value || !current.value) return
+  if (isPlaying.value || isShowingTarget.value || !current.value) return
   if (blocks.value.length === 0) return
   isPlaying.value = true
   playingIndex.value = -1
 
-  for (let r = 0; r < repeatCount.value; r++) {
-    for (let i = 0; i < blocks.value.length; i++) {
-      playingIndex.value = r * blocks.value.length + i
-      await new Promise(res => setTimeout(res, 380))
-    }
+  for (let i = 0; i < yourExpanded.value.length; i++) {
+    playingIndex.value = i
+    await new Promise(res => setTimeout(res, 420))
   }
 
-  // Compare expected vs played
-  const target: string[] = []
-  for (let r = 0; r < current.value.times; r++) target.push(...current.value.pattern)
-  const result: string[] = []
-  for (let r = 0; r < repeatCount.value; r++) result.push(...blocks.value)
-
-  const ok = target.length === result.length && target.every((m, i) => m === result[i])
+  const ok = targetExpanded.value.length === yourExpanded.value.length
+    && targetExpanded.value.every((m, i) => m === yourExpanded.value[i])
 
   if (ok) {
     feedback.value = 'correct'
     setTimeout(() => {
       feedback.value = 'idle'
       stepIndex.value += 1
-    }, 1100)
+    }, 1200)
   }
   else {
     feedback.value = 'wrong'
@@ -170,21 +217,9 @@ watch(voice.resultCount, (n) => {
   if (!result.matched) return
   if (result.matched === 'run') play()
   else if (result.matched === 'reset') clearAll()
+  else if (result.matched === 'show') showTarget()
   else if (/^\d+$/.test(result.matched)) setRepeat(Number.parseInt(result.matched, 10))
   else if (moves.value.some(m => m.id === result.matched)) addMove(result.matched)
-})
-
-const moveById = computed(() => {
-  const map = new Map<string, DanceMove>()
-  for (const m of moves.value) map.set(m.id, m)
-  return map
-})
-
-// Flatten the visible "expanded" sequence so kids see what the loop will do.
-const expanded = computed<string[]>(() => {
-  const out: string[] = []
-  for (let r = 0; r < repeatCount.value; r++) out.push(...blocks.value)
-  return out
 })
 </script>
 
@@ -201,14 +236,46 @@ const expanded = computed<string[]>(() => {
     <div v-if="!done && current" class="lp">
       <p class="lp__prompt">{{ promptCopy[locale] }}</p>
 
-      <!-- The "loop body" composer -->
+      <!-- TARGET: the dance the kid needs to reproduce -->
+      <section
+        class="lp__target"
+        :class="{ 'is-playing': isShowingTarget }"
+        :aria-label="locale === 'id' ? 'Target tarian' : 'Target dance'"
+      >
+        <header class="lp__target-head">
+          <span class="lp__target-label">
+            🎯 {{ locale === 'id' ? 'Target' : 'Target' }}
+          </span>
+          <button
+            type="button"
+            class="lp__watch-btn"
+            :disabled="isShowingTarget || isPlaying"
+            @click="showTarget"
+          >
+            ▶ {{ watchLabel }}
+          </button>
+        </header>
+        <p class="lp__target-line">{{ goalLine[locale] }}</p>
+        <div class="lp__target-row">
+          <span
+            v-for="(id, i) in targetExpanded"
+            :key="`t-${i}`"
+            class="lp__target-chip"
+            :class="{ 'is-active': i === targetIndex }"
+          >
+            {{ moveById.get(id)?.emoji }}
+          </span>
+        </div>
+      </section>
+
+      <!-- LOOP COMPOSER -->
       <div class="lp__loop">
         <div class="lp__loop-head">
-          <span class="lp__loop-keyword">repeat</span>
+          <span class="lp__loop-keyword">{{ locale === 'id' ? 'ulang' : 'repeat' }}</span>
           <div class="lp__counter">
             <button
               class="lp__counter-btn"
-              :disabled="isPlaying"
+              :disabled="isPlaying || isShowingTarget"
               :aria-label="locale === 'id' ? 'Kurang' : 'Decrease'"
               @click="setRepeat(repeatCount - 1)"
             >
@@ -217,7 +284,7 @@ const expanded = computed<string[]>(() => {
             <span class="lp__counter-num">{{ repeatCount }}</span>
             <button
               class="lp__counter-btn"
-              :disabled="isPlaying"
+              :disabled="isPlaying || isShowingTarget"
               :aria-label="locale === 'id' ? 'Tambah' : 'Increase'"
               @click="setRepeat(repeatCount + 1)"
             >
@@ -226,7 +293,7 @@ const expanded = computed<string[]>(() => {
           </div>
           <span class="lp__loop-keyword">×</span>
         </div>
-        <div class="lp__loop-body" :aria-label="repeatLabel">
+        <div class="lp__loop-body">
           <span v-if="blocks.length === 0" class="lp__loop-empty">
             {{ locale === 'id' ? 'Pilih gerakan di bawah' : 'Add moves below' }}
           </span>
@@ -244,17 +311,24 @@ const expanded = computed<string[]>(() => {
         </div>
       </div>
 
-      <!-- Expanded preview -->
-      <div class="lp__expanded" :aria-label="locale === 'id' ? 'Pratinjau' : 'Preview'">
-        <span class="lp__expanded-label">
-          {{ locale === 'id' ? 'Akan menjadi' : 'Becomes' }}: ({{ expanded.length }}
-          {{ locale === 'id' ? 'gerakan' : 'moves' }})
+      <!-- YOUR EXPANSION (so kid sees what the loop will play) -->
+      <div class="lp__yours">
+        <span class="lp__yours-label">
+          {{ locale === 'id' ? 'Hasil loop kamu' : 'Your loop becomes' }}:
+          <strong>{{ yourExpanded.length }}</strong>
+          {{ locale === 'id' ? 'gerakan' : 'moves' }}
+          <em>·</em>
+          {{ locale === 'id' ? 'target' : 'target' }}
+          <strong>{{ targetExpanded.length }}</strong>
         </span>
-        <div class="lp__expanded-row">
+        <div class="lp__yours-row">
+          <span v-if="yourExpanded.length === 0" class="lp__yours-empty">
+            {{ locale === 'id' ? 'Belum ada gerakan' : 'Nothing yet' }}
+          </span>
           <span
-            v-for="(id, i) in expanded"
-            :key="`e-${i}`"
-            class="lp__expanded-chip"
+            v-for="(id, i) in yourExpanded"
+            :key="`y-${i}`"
+            class="lp__yours-chip"
             :class="{ 'is-active': i === playingIndex }"
           >
             {{ moveById.get(id)?.emoji }}
@@ -262,13 +336,13 @@ const expanded = computed<string[]>(() => {
         </div>
       </div>
 
-      <!-- Move palette -->
+      <!-- MOVE PALETTE -->
       <ul class="lp__moves">
         <li v-for="m in moves" :key="m.id">
           <button
             type="button"
             class="lp__move"
-            :disabled="isPlaying"
+            :disabled="isPlaying || isShowingTarget"
             @click="addMove(m.id)"
           >
             <span class="lp__move-emoji">{{ m.emoji }}</span>
@@ -280,14 +354,14 @@ const expanded = computed<string[]>(() => {
       <div class="lp__actions">
         <button
           class="lp__go"
-          :disabled="isPlaying || blocks.length === 0"
+          :disabled="isPlaying || isShowingTarget || blocks.length === 0"
           @click="play"
         >
           ▶ {{ goLabel }}
         </button>
         <button
           class="lp__reset"
-          :disabled="isPlaying || blocks.length === 0"
+          :disabled="isPlaying || isShowingTarget || blocks.length === 0"
           @click="clearAll"
         >
           {{ resetLabel }}
@@ -331,20 +405,81 @@ const expanded = computed<string[]>(() => {
   width: 100%;
   max-width: 880px;
   display: grid;
-  gap: 1.25rem;
+  gap: 1.1rem;
 }
 .lp__prompt {
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-size: clamp(1rem, 2vw, 1.4rem);
   font-weight: 600;
   margin: 0;
   text-align: center;
 }
 
+.lp__target {
+  background: linear-gradient(135deg, #fff5f9 0%, #fef0f4 100%);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--color-pink);
+  display: grid;
+  gap: 0.6rem;
+}
+.lp__target.is-playing {
+  box-shadow: 0 0 0 4px rgba(255, 126, 182, 0.25);
+}
+.lp__target-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.lp__target-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lp__watch-btn {
+  height: 40px;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-pink);
+  color: var(--color-white);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.lp__watch-btn:disabled { opacity: 0.5; }
+.lp__target-line {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-fg-muted);
+}
+.lp__target-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lp__target-chip {
+  width: clamp(36px, 8vw, 44px);
+  height: clamp(36px, 8vw, 44px);
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--color-white);
+  font-size: clamp(1.1rem, 3vw, 1.5rem);
+  transition: transform 0.18s, background 0.18s;
+}
+.lp__target-chip.is-active {
+  transform: scale(1.3);
+  background: var(--color-pink);
+}
+
 .lp__loop {
   background: var(--color-surface);
   border-radius: var(--radius-md);
-  padding: 1rem 1.25rem;
+  padding: 0.9rem 1.1rem;
   box-shadow: var(--shadow-card);
   border-left: 6px solid var(--color-purple);
 }
@@ -352,12 +487,13 @@ const expanded = computed<string[]>(() => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
 }
 .lp__loop-keyword {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1rem;
   color: var(--color-purple);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -365,7 +501,7 @@ const expanded = computed<string[]>(() => {
 .lp__counter {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   background: var(--color-bg);
   border-radius: 999px;
   padding: 4px;
@@ -379,9 +515,7 @@ const expanded = computed<string[]>(() => {
   font-size: 1.25rem;
   font-weight: 700;
 }
-.lp__counter-btn:disabled {
-  opacity: 0.4;
-}
+.lp__counter-btn:disabled { opacity: 0.4; }
 .lp__counter-num {
   min-width: 28px;
   text-align: center;
@@ -392,57 +526,70 @@ const expanded = computed<string[]>(() => {
 .lp__loop-body {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  min-height: 56px;
+  gap: 0.4rem;
+  min-height: 48px;
   align-items: center;
 }
 .lp__loop-empty {
   color: var(--color-fg-muted);
   font-style: italic;
+  font-size: 0.9rem;
 }
 .lp__block {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.85rem;
+  padding: 0.35rem 0.75rem;
   border-radius: 999px;
   background: var(--color-accent-soft);
   font-family: var(--font-display);
   font-weight: 600;
+  font-size: 0.9rem;
 }
-.lp__block-emoji {
-  font-size: 1.4rem;
-}
+.lp__block-emoji { font-size: 1.3rem; }
 
-.lp__expanded {
+.lp__yours {
   background: var(--color-bg-deep);
   border-radius: var(--radius-md);
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1rem;
 }
-.lp__expanded-label {
+.lp__yours-label {
   display: block;
   font-size: 0.85rem;
   color: var(--color-fg-muted);
-  margin-bottom: 0.5rem;
-  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.04em;
 }
-.lp__expanded-row {
+.lp__yours-label em {
+  color: var(--color-fg-muted);
+  margin: 0 0.3rem;
+}
+.lp__yours-label strong {
+  color: var(--color-fg);
+  font-weight: 700;
+}
+.lp__yours-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 4px;
 }
-.lp__expanded-chip {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: var(--color-surface);
+.lp__yours-empty {
+  color: var(--color-fg-muted);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+.lp__yours-chip {
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  font-size: 1.25rem;
+  border-radius: 8px;
+  background: var(--color-surface);
+  font-size: 1.1rem;
   transition: transform 0.15s, background 0.15s;
 }
-.lp__expanded-chip.is-active {
-  transform: scale(1.25);
+.lp__yours-chip.is-active {
+  transform: scale(1.3);
   background: var(--color-success);
 }
 
@@ -452,46 +599,43 @@ const expanded = computed<string[]>(() => {
   margin: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.5rem;
   justify-content: center;
 }
 .lp__move {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  height: 64px;
-  padding: 0 1rem;
+  height: clamp(56px, 11vw, 64px);
+  padding: 0 0.9rem;
   border: 0;
   border-radius: 999px;
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
   font-family: var(--font-display);
   font-weight: 600;
+  font-size: 0.95rem;
 }
-.lp__move:disabled {
-  opacity: 0.4;
-}
-.lp__move-emoji {
-  font-size: 1.6rem;
-}
+.lp__move:disabled { opacity: 0.4; }
+.lp__move-emoji { font-size: 1.4rem; }
 
 .lp__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.6rem;
   align-items: center;
   justify-content: center;
 }
 .lp__go,
 .lp__reset {
-  height: 64px;
-  padding: 0 1.5rem;
+  height: clamp(56px, 11vw, 64px);
+  padding: 0 1.25rem;
   border: 0;
   border-radius: var(--radius-md);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.05rem;
-  min-width: 140px;
+  font-size: 1rem;
+  min-width: 120px;
 }
 .lp__go {
   background: var(--color-success);
@@ -502,9 +646,7 @@ const expanded = computed<string[]>(() => {
   color: var(--color-fg);
 }
 .lp__go:disabled,
-.lp__reset:disabled {
-  opacity: 0.4;
-}
+.lp__reset:disabled { opacity: 0.4; }
 
 .lp__voice {
   display: inline-flex;
@@ -531,9 +673,7 @@ const expanded = computed<string[]>(() => {
   justify-items: center;
   gap: 1.5rem;
 }
-.lp__done-emoji {
-  font-size: 4rem;
-}
+.lp__done-emoji { font-size: 4rem; }
 .lp__home-btn {
   padding: 0.85rem 1.75rem;
   border-radius: 999px;
